@@ -19,16 +19,16 @@ Most organizations don't know where this cryptography is used, so they can't pla
 QuantumScan connects to a list of TLS endpoints, inspects their cryptography, and shows how exposed each one is to quantum attacks.
 
 **Core: network scanner**
-- Connects to each hostname and reads the TLS version, cipher suite and certificate
+- Connects to each hostname (in parallel) and reads the TLS version, cipher suites and certificate
 - Identifies the certificate's public key type and size (e.g. `RSA-2048`, `EC P-256`)
 - Labels each endpoint as **vulnerable**, **weak** or **post-quantum ready**
 - Suggests a replacement (e.g. ML-KEM, ML-DSA, or hybrid key exchange)
 
 **Extras (basic versions)**
 - **Code scan:** searches source files for quantum-vulnerable crypto usage such as `RSA`, `ECDSA` and `generate_private_key`
-- **Cloud scan:** reads a sample cloud/Terraform config file listing key types and flags the vulnerable ones
+- **Cloud scan:** reads a sample cloud config (JSON or Terraform) listing key types and flags the vulnerable ones
 
-Everything appears in a simple dashboard with a risk table and chart.
+Everything appears in a simple dashboard with a filterable risk table and chart.
 
 <!-- TODO: remove any extra that doesn't work by demo time -->
 
@@ -36,7 +36,7 @@ Everything appears in a simple dashboard with a risk table and chart.
 
 ```
   hosts.txt  ──►  Network scanner ──┐
-  source code ──► Code scanner    ──┼──►  results.json  ──►  Streamlit dashboard
+  source code ──► Code scanner    ──┼──►  results.json  ──►  pandas  ──►  Streamlit dashboard
   config file ──► Cloud scanner   ──┘
 ```
 
@@ -46,11 +46,17 @@ Each scanner writes findings in the same format: asset, algorithm, key size, ris
 
 <!-- TODO: edit to match what you actually use -->
 
-- **Python**
-- **`ssl` and `socket`** (standard library) to connect to endpoints
-- **`cryptography`** library to read certificate details
-- **Streamlit** for the dashboard
-- **JSON** for storing results
+| Purpose | Library |
+|---|---|
+| TLS scanning | [`sslyze`](https://github.com/nabla-c0d3/sslyze) (cipher suites, certificates) |
+| Certificate parsing | [`cryptography`](https://cryptography.io) (key type and size) |
+| Scanning many hosts at once | `concurrent.futures` (standard library) |
+| Code scanning | `pathlib` and `re` (standard library) |
+| Terraform parsing (optional) | [`python-hcl2`](https://github.com/amplify-education/python-hcl2) |
+| Data handling | [`pandas`](https://pandas.pydata.org) |
+| Dashboard | [`streamlit`](https://streamlit.io) |
+| Terminal output (fallback demo) | [`rich`](https://github.com/Textualize/rich) |
+| Storage | JSON files |
 
 ## Getting started
 
@@ -67,6 +73,12 @@ cd <your-repo>
 python -m venv .venv
 source .venv/bin/activate      # on Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Or install the libraries directly:
+
+```bash
+pip install sslyze cryptography pandas streamlit rich python-hcl2
 ```
 
 ### Run the scanners
@@ -94,6 +106,16 @@ streamlit run dashboard.py
 
 Then open the local address Streamlit prints in your terminal.
 
+### Terminal fallback
+
+If you just want a quick view without the dashboard:
+
+```bash
+python show_results.py
+```
+
+This prints a colored risk table using `rich`.
+
 ## Demo
 
 For the demo we scan a mix of well-known websites plus a few deliberately old or weak test endpoints, and show the live risk ranking in the dashboard.
@@ -105,12 +127,14 @@ For the demo we scan a mix of well-known websites plus a few deliberately old or
 This was built in 24 hours, so:
 
 - The network scanner checks live endpoints only (no packet capture analysis).
+- Risk labels are based mainly on the certificate's key type. Detecting post-quantum hybrid key exchange (e.g. X25519MLKEM768) depends on the tooling and OpenSSL version available, so it may be incomplete.
 - The code scanner uses simple keyword matching, so it can produce false positives.
 - The cloud scanner reads sample files rather than connecting to a live cloud account.
 - Risk levels are based on a simple rule set, not a full cryptographic audit.
 
 ## Roadmap
 
+- [ ] Reliable detection of post-quantum hybrid key exchange
 - [ ] Use Semgrep for more accurate code scanning
 - [ ] Connect to live AWS, Azure and GCP accounts
 - [ ] Analyze packet captures (pcap) for passive TLS inspection
