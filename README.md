@@ -241,11 +241,11 @@ This was built in 24 hours, so:
 
 | Name | Role | Responsibilities | Main files | GitHub |
 |---|---|---|---|---|
-| | **Network analyst** | Parse the `.pcap` / `.pcapng` files and extract TLS handshake details (cipher suites, key exchange groups, signature schemes); tell classical from hybrid/PQC exchanges | `network_analyzer.py` | |
-| | **Code & config scanner** | Scan the Python, Java and Go repos for crypto algorithms, key lengths and libraries; parse the mock KMS and load balancer JSON dumps | `code_scanner.py`, `config_scanner.py` | |
-| | **Risk engine & CBOM** | Own the shared finding format, the Critical/Medium/Safe classification table, the Quantum Risk Score, the FIPS 203/204/205 mapping, and the CycloneDX-style CBOM export | `classifier.py`, `export_cbom.py` | |
-| | **Dashboard & UX** | Build the Streamlit dashboard (risk score, charts, filters) and the Rich terminal view | `dashboard.py`, `show_results.py` | |
-| | **Integration, demo & pitch** | Repo and Git setup, `requirements.txt` / Dockerfile, test data and demo script, optional live endpoint probing, README, final pitch and demo video | `live_probe.py`, `Dockerfile`, `demo/` | |
+| Ihor | **Network analyst** | Parse the `.pcap` / `.pcapng` files and extract TLS handshake details (cipher suites, key exchange groups, signature schemes); tell classical from hybrid/PQC exchanges | `network_analyzer.py` | |
+| Enzo, Bicho | **Code & config scanner** | Scan the Python, Java and Go repos for crypto algorithms, key lengths and libraries; parse the mock KMS and load balancer JSON dumps | `code_scanner.py`, `config_scanner.py` | |
+| Enzo, Bicho, Miguel | **Risk engine & CBOM** | Own the shared finding format, the Critical/Medium/Safe classification table, the Quantum Risk Score, the FIPS 203/204/205 mapping, and the CycloneDX-style CBOM export | `classifier.py`, `export_cbom.py` | |
+| Daniil, Miguel | **Dashboard & UX** | Build the Streamlit dashboard (risk score, charts, filters) and the Rich terminal view | `dashboard.py`, `show_results.py` | |
+| Todos | **Integration, demo & pitch** | Repo and Git setup, `requirements.txt` / Dockerfile, test data and demo script, optional live endpoint probing, README, final pitch and demo video | `live_probe.py`, `Dockerfile`, `demo/` | |
 
 **Working agreements**
 
