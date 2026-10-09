@@ -1,46 +1,61 @@
-# QuantumScan
+# QuantumTrace
 
-> Check which websites and systems use cryptography that future quantum computers will break, and rank them by risk.
+> Uncovering cryptographic debt in the quantum dawn. A lightweight, non-intrusive tool that detects, classifies and visualizes quantum-vulnerable cryptography across **network traffic**, **application code** and **cloud configurations**, and exports a **Cryptography Bill of Materials (CBOM)**.
 
-Built in 24 hours for **JunctionX Lisbon**.
+Built in 24 hours for the **QuantumTrace** challenge at **JunctionX Lisbon 2026**.
 
-<!-- TODO: replace "QuantumScan" with your final name; add a screenshot or demo GIF here -->
+<!-- TODO: replace/confirm the project name; add a banner, screenshot or demo GIF here -->
 
 ---
 
 ## The problem
 
-Quantum computers running Shor's algorithm will break today's public-key cryptography: **RSA, Diffie-Hellman and elliptic-curve schemes (ECDSA, ECDH)**. Attackers are already collecting encrypted data now to decrypt it later ("harvest now, decrypt later").
+Quantum computers running Shor's algorithm will break the public-key cryptography the internet relies on: **RSA, DSA, and elliptic-curve schemes (ECDSA, ECDH)**, plus Diffie-Hellman. Grover's algorithm also weakens some symmetric ciphers and hashes. Adversaries are already running **"Harvest Now, Decrypt Later"** attacks, archiving encrypted traffic today to decrypt it once quantum systems mature.
 
-Most organizations don't know where this cryptography is used, so they can't plan their migration to post-quantum cryptography.
+NIST has finalized post-quantum standards (**FIPS 203, 204, 205**), but most organizations don't know where legacy cryptography is used across their environments. You can't migrate what you can't see.
 
-## What it does
+## What QuantumTrace does
 
-QuantumScan connects to a list of TLS endpoints, inspects their cryptography, and shows how exposed each one is to quantum attacks.
+QuantumTrace audits several kinds of input, identifies the cryptographic primitives in use, and classifies each one by quantum risk.
 
-**Core: network scanner**
-- Connects to each hostname (in parallel) and reads the TLS version, cipher suites and certificate
-- Identifies the certificate's public key type and size (e.g. `RSA-2048`, `EC P-256`)
-- Labels each endpoint as **vulnerable**, **weak** or **post-quantum ready**
-- Suggests a replacement (e.g. ML-KEM, ML-DSA, or hybrid key exchange)
+### Input sources
 
-**Extras (basic versions)**
-- **Code scan:** searches source files for quantum-vulnerable crypto usage such as `RSA`, `ECDSA` and `generate_private_key`
-- **Cloud scan:** reads a sample cloud config (JSON or Terraform) listing key types and flags the vulnerable ones
+| Source | What we extract |
+|---|---|
+| **Network captures** (`.pcap` / `.pcapng`) | TLS handshakes (Client/Server Hello): negotiated cipher suites, key exchange groups, signature schemes. Distinguishes classical (RSA, secp256r1) from hybrid/post-quantum (ML-KEM/Kyber) |
+| **Code repositories** (Python, Java, Go) | Declared algorithms, key lengths and cryptographic libraries |
+| **Cloud configs** (KMS and load balancer JSON dumps) | Key specs and TLS policies |
+| **Live endpoints** (optional) | TLS profile of public sandbox targets, probed in real time |
 
-Everything appears in a simple dashboard with a filterable risk table and chart.
+<!-- TODO: remove any row you don't actually support by demo time -->
 
-<!-- TODO: remove any extra that doesn't work by demo time -->
+### Quantum risk classification
+
+| Tier | Meaning | Examples |
+|---|---|---|
+| **Critical** | Asymmetric schemes broken by Shor's algorithm | RSA, DSA, ECDSA, ECDH, Diffie-Hellman |
+| **Medium** | Symmetric ciphers/hashes weakened by Grover's algorithm | AES-128, 3DES, SHA-1 |
+| **Safe / Quantum-resilient** | Large-key symmetric primitives and recognized PQC standards | AES-256, ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205) |
+
+Each finding is mapped to a recommended replacement and the relevant NIST standard.
+
+### Outputs
+
+- **Quantum Risk Score** for the whole environment
+- **Dashboard** (Streamlit) with filterable findings and charts, plus a terminal view (Rich)
+- **CBOM export** in JSON, based on the CycloneDX 1.6 cryptographic asset model
 
 ## How it works
 
 ```
-  hosts.txt  ──►  Network scanner ──┐
-  source code ──► Code scanner    ──┼──►  results.json  ──►  pandas  ──►  Streamlit dashboard
-  config file ──► Cloud scanner   ──┘
+  .pcap files   ──►  Network analyzer  ──┐
+  code repos    ──►  Code scanner      ──┼──►  Normalized findings  ──►  Risk classifier
+  KMS / LB JSON ──►  Config scanner    ──┘                                   │
+                                                                             ▼
+                                                    Dashboard  |  CBOM (JSON)  |  Risk score
 ```
 
-Each scanner writes findings in the same format: asset, algorithm, key size, risk level and recommended replacement.
+Every scanner produces the same finding format: asset, location, algorithm, key length, library, risk tier, and recommended replacement.
 
 ## Tech stack
 
@@ -48,21 +63,21 @@ Each scanner writes findings in the same format: asset, algorithm, key size, ris
 
 | Purpose | Library |
 |---|---|
-| TLS scanning | [`sslyze`](https://github.com/nabla-c0d3/sslyze) (cipher suites, certificates) |
-| Certificate parsing | [`cryptography`](https://cryptography.io) (key type and size) |
-| Scanning many hosts at once | `concurrent.futures` (standard library) |
-| Code scanning | `pathlib` and `re` (standard library) |
-| Terraform parsing (optional) | [`python-hcl2`](https://github.com/amplify-education/python-hcl2) |
+| Packet capture parsing | [`scapy`](https://scapy.net) or [`pyshark`](https://github.com/KimiNewt/pyshark) (needs TShark/Wireshark installed) |
+| Certificate parsing | [`cryptography`](https://cryptography.io) |
+| Live endpoint probing (optional) | [`sslyze`](https://github.com/nabla-c0d3/sslyze) |
+| Code and config scanning | `pathlib`, `re`, `json` (standard library) |
 | Data handling | [`pandas`](https://pandas.pydata.org) |
 | Dashboard | [`streamlit`](https://streamlit.io) |
-| Terminal output (fallback demo) | [`rich`](https://github.com/Textualize/rich) |
-| Storage | JSON files |
+| Terminal UI | [`rich`](https://github.com/Textualize/rich) |
+| CBOM format | CycloneDX 1.6 (crypto asset module), written as JSON |
 
 ## Getting started
 
 ### Prerequisites
 
 - Python 3.11+
+- (If using PyShark) [Wireshark/TShark](https://www.wireshark.org) installed and on your PATH
 
 ### Install
 
@@ -78,7 +93,7 @@ pip install -r requirements.txt
 Or install the libraries directly:
 
 ```bash
-pip install sslyze cryptography pandas streamlit rich python-hcl2
+pip install scapy cryptography pandas streamlit rich sslyze
 ```
 
 ### Run the scanners
@@ -86,14 +101,17 @@ pip install sslyze cryptography pandas streamlit rich python-hcl2
 <!-- TODO: replace with your real file names and commands -->
 
 ```bash
-# 1. Scan the websites listed in hosts.txt
-python network_scanner.py hosts.txt
+# 1. Analyze a packet capture
+python network_analyzer.py data/pcaps/
 
-# 2. (Optional) Scan a folder of source code
-python code_scanner.py ./path/to/code
+# 2. Scan sample code repositories
+python code_scanner.py data/code/
 
-# 3. (Optional) Scan a sample cloud config
-python cloud_scanner.py sample_config.json
+# 3. Scan mock KMS / load balancer configs
+python config_scanner.py data/cloud/
+
+# 4. (Optional) Probe live sandbox endpoints
+python live_probe.py hosts.txt
 ```
 
 Each command adds its findings to `results.json`.
@@ -104,21 +122,30 @@ Each command adds its findings to `results.json`.
 streamlit run dashboard.py
 ```
 
-Then open the local address Streamlit prints in your terminal.
+### Export the CBOM
 
-### Terminal fallback
+```bash
+python export_cbom.py results.json > cbom.json
+```
 
-If you just want a quick view without the dashboard:
+### Terminal view
 
 ```bash
 python show_results.py
 ```
 
-This prints a colored risk table using `rich`.
+### Docker (optional)
+
+<!-- TODO: only keep this section if you actually add a Dockerfile -->
+
+```bash
+docker build -t quantumtrace .
+docker run -p 8501:8501 quantumtrace
+```
 
 ## Demo
 
-For the demo we scan a mix of well-known websites plus a few deliberately old or weak test endpoints, and show the live risk ranking in the dashboard.
+We run QuantumTrace on the organizer-provided synthetic data (legacy TLS 1.2 sessions, modern TLS 1.3 handshakes, hybrid PQC exchanges, sample Python/Java/Go repos, and mock cloud configs) and show how findings from every source land in a single risk-ranked view.
 
 <!-- TODO: add screenshots or a link to the demo video -->
 
@@ -126,34 +153,46 @@ For the demo we scan a mix of well-known websites plus a few deliberately old or
 
 This was built in 24 hours, so:
 
-- The network scanner checks live endpoints only (no packet capture analysis).
-- Risk labels are based mainly on the certificate's key type. Detecting post-quantum hybrid key exchange (e.g. X25519MLKEM768) depends on the tooling and OpenSSL version available, so it may be incomplete.
-- The code scanner uses simple keyword matching, so it can produce false positives.
-- The cloud scanner reads sample files rather than connecting to a live cloud account.
-- Risk levels are based on a simple rule set, not a full cryptographic audit.
+- Detection is rule-based and covers a limited set of algorithms and libraries, so some false positives or misses are possible.
+- Code scanning uses pattern matching rather than full static analysis.
+- Cloud scanning reads provided configuration dumps, not live cloud accounts.
+- Binary artifact analysis is not supported.
+- The CBOM follows the CycloneDX 1.6 cryptographic asset model in a simplified form and may not pass full schema validation.
 
 ## Roadmap
 
-- [ ] Reliable detection of post-quantum hybrid key exchange
-- [ ] Use Semgrep for more accurate code scanning
-- [ ] Connect to live AWS, Azure and GCP accounts
-- [ ] Analyze packet captures (pcap) for passive TLS inspection
-- [ ] Cover SSH, IPsec and email (STARTTLS)
-- [ ] Export a standard CycloneDX CBOM
-- [ ] Suggest automated code fixes
+- [ ] Full CycloneDX 1.6 schema validation
+- [ ] Deeper static analysis (e.g. Semgrep) for code scanning
+- [ ] Binary artifact scanning
+- [ ] Live AWS, Azure and GCP integration
+- [ ] More protocols (SSH, IPsec, STARTTLS)
+- [ ] CI integration to flag new quantum-vulnerable code
+- [ ] Automated remediation suggestions
 
 ## Team
 
-<!-- TODO: add teammates -->
+<!-- TODO: fill in names and GitHub handles -->
 
-| Name | Role | GitHub |
-|---|---|---|
-| | | |
+| Name | Role | Responsibilities | Main files | GitHub |
+|---|---|---|---|---|
+| | **Network analyst** | Parse the `.pcap` / `.pcapng` files and extract TLS handshake details (cipher suites, key exchange groups, signature schemes); tell classical from hybrid/PQC exchanges | `network_analyzer.py` | |
+| | **Code & config scanner** | Scan the Python, Java and Go repos for crypto algorithms, key lengths and libraries; parse the mock KMS and load balancer JSON dumps | `code_scanner.py`, `config_scanner.py` | |
+| | **Risk engine & CBOM** | Own the shared finding format, the Critical/Medium/Safe classification table, the Quantum Risk Score, the FIPS 203/204/205 mapping, and the CycloneDX-style CBOM export | `classifier.py`, `export_cbom.py` | |
+| | **Dashboard & UX** | Build the Streamlit dashboard (risk score, charts, filters) and the Rich terminal view | `dashboard.py`, `show_results.py` | |
+| | **Integration, demo & pitch** | Repo and Git setup, `requirements.txt` / Dockerfile, test data and demo script, optional live endpoint probing, README, final pitch and demo video | `live_probe.py`, `Dockerfile`, `demo/` | |
+
+**Working agreements**
+
+- In the first two hours, agree on the shared finding format (asset, location, algorithm, key length, library, risk tier, replacement) and write it down in the repo. Everyone's output depends on it.
+- Each person works mainly in their own files to avoid merge conflicts, and commits small and often.
+- Use short branches and merge into `main` at least every few hours so integration problems show up early.
+- Stop adding features in the last two hours and use that time to test the demo end to end and rehearse the pitch.
 
 ## Acknowledgements
 
-- JunctionX Lisbon organizers and partners
+- JunctionX Lisbon organizers and the QuantumTrace challenge partners
 - [NIST Post-Quantum Cryptography project](https://csrc.nist.gov/projects/post-quantum-cryptography)
+- [CycloneDX CBOM](https://cyclonedx.org/capabilities/cbom/)
 
 ## License
 
