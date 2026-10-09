@@ -1,0 +1,9 @@
+Ao adicionar uma biblioteca escrever no terminal:
+
+pip freeze > requirements.txt
+
+- adiciona automatica bibliotecas no requirements.txt
+
+Para instalar as bibliotecas fazer:
+
+pip install -r requirements.txt
