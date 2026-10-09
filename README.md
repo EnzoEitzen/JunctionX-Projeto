@@ -143,6 +143,72 @@ docker build -t quantumtrace .
 docker run -p 8501:8501 quantumtrace
 ```
 
+## Step-by-step guide
+
+A walkthrough from a fresh machine to a finished audit report.
+
+<!-- TODO: update file names, folders and commands to match your repo -->
+
+1. **Get the code**
+   ```bash
+   git clone https://github.com/<your-org>/<your-repo>.git
+   cd <your-repo>
+   ```
+
+2. **Create a virtual environment and install dependencies**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate      # on Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+   If you use PyShark, also install Wireshark/TShark and make sure `tshark` is on your PATH.
+
+3. **Add the input data**
+   Put the organizer-provided files in the `data/` folder:
+   - `data/pcaps/`: the `.pcap` / `.pcapng` captures
+   - `data/code/`: the sample Python, Java and Go repositories
+   - `data/cloud/`: the mock KMS and load balancer JSON dumps
+
+4. **Analyze the network captures**
+   ```bash
+   python network_analyzer.py data/pcaps/
+   ```
+   This extracts the TLS handshake details from each capture and writes the findings to `results.json`.
+
+5. **Scan the code and configuration files**
+   ```bash
+   python code_scanner.py data/code/
+   python config_scanner.py data/cloud/
+   ```
+   Each command adds its findings to the same `results.json`.
+
+6. **(Optional) Probe live sandbox endpoints**
+   ```bash
+   python live_probe.py hosts.txt
+   ```
+
+7. **Classify the risk**
+   The classifier assigns every finding to Critical, Medium or Safe, maps it to the relevant NIST standard, and computes the overall Quantum Risk Score. If this isn't already part of the scanners' output, run:
+   ```bash
+   python classifier.py results.json
+   ```
+
+8. **Explore the results**
+   ```bash
+   streamlit run dashboard.py     # web dashboard
+   python show_results.py         # terminal view
+   ```
+   Filter by source or risk tier, and check the Quantum Risk Score at the top.
+
+9. **Export the CBOM**
+   ```bash
+   python export_cbom.py results.json > cbom.json
+   ```
+   The result is a structured JSON audit report based on the CycloneDX 1.6 cryptographic asset model.
+
+10. **Act on the findings**
+    Use the recommended replacements in the report (for example ML-KEM, ML-DSA or SLH-DSA) to plan your migration, starting with the Critical findings that protect long-lived data.
+
 ## Demo
 
 We run QuantumTrace on the organizer-provided synthetic data (legacy TLS 1.2 sessions, modern TLS 1.3 handshakes, hybrid PQC exchanges, sample Python/Java/Go repos, and mock cloud configs) and show how findings from every source land in a single risk-ranked view.
