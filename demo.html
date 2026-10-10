@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuantumTrace — Pitch Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: #000000;
+      color: #f5f5f7;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .presentation {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .slide {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      padding: 7vw 8vw;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      opacity: 0;
+      transform: scale(0.985) translateY(12px);
+      pointer-events: none;
+      transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+                  transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+      pointer-events: auto;
+    }
+
+    /* Ambient glow */
+    .glow-cyan {
+      position: absolute;
+      width: 50vw;
+      height: 50vw;
+      background: radial-gradient(circle, rgba(41, 151, 255, 0.08) 0%, rgba(0,0,0,0) 70%);
+      top: -15vw;
+      right: -10vw;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .glow-amber {
+      position: absolute;
+      width: 45vw;
+      height: 45vw;
+      background: radial-gradient(circle, rgba(255, 159, 10, 0.06) 0%, rgba(0,0,0,0) 70%);
+      bottom: -15vw;
+      left: -10vw;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .content-layer {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Typography */
+    .hero-title {
+      font-size: clamp(3.2rem, 6vw, 5.8rem);
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+      color: #ffffff;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #ffffff 40%, #86868b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .accent-cyan {
+      color: #2997ff;
+    }
+
+    .hero-subtitle {
+      font-size: clamp(1.4rem, 2.2vw, 2rem);
+      font-weight: 400;
+      color: #86868b;
+      line-height: 1.4;
+      max-width: 850px;
+      letter-spacing: -0.015em;
+    }
+
+    .hero-subtitle strong {
+      color: #f5f5f7;
+      font-weight: 500;
+    }
+
+    /* Cards & Layouts */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 2vw;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.3s ease, background 0.3s ease;
+      min-height: 260px;
+    }
+
+    .card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    .card-tag {
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: #86868b;
+    }
+
+    .card-title {
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+      margin-top: 12px;
+      margin-bottom: 8px;
+    }
+
+    .card-desc {
+      font-size: 1rem;
+      color: #86868b;
+      line-height: 1.5;
+    }
+
+    .card-footer {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      color: #2997ff;
+      background: rgba(41, 151, 255, 0.08);
+      padding: 6px 12px;
+      border-radius: 8px;
+      width: fit-content;
+      margin-top: 20px;
+    }
+
+    /* Split layout */
+    .split-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      align-items: center;
+      margin-top: 2vw;
+    }
+
+    .metric-box {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 36px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .pill-red {
+      background: rgba(255, 69, 58, 0.15);
+      color: #ff453a;
+      border: 1px solid rgba(255, 69, 58, 0.3);
+    }
+
+    .pill-green {
+      background: rgba(48, 209, 88, 0.15);
+      color: #30d158;
+      border: 1px solid rgba(48, 209, 88, 0.3);
+    }
+
+    /* Controls */
+    .nav-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(20, 20, 22, 0.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 16px;
+      border-radius: 100px;
+      z-index: 100;
+    }
+
+    .nav-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .nav-dot.active {
+      background: #ffffff;
+      width: 24px;
+      border-radius: 100px;
+    }
+
+    .key-hint {
+      position: fixed;
+      bottom: 28px;
+      right: 32px;
+      font-size: 0.75rem;
+      color: #55555a;
+      letter-spacing: 0.04em;
+    }
+
+    .key-hint kbd {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #86868b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="presentation">
+
+    <!-- SLIDE 1: O PROBLEMA PRAGMÁTICO -->
+    <div class="slide active" id="slide-1">
+      <div class="glow-cyan"></div>
+      <div class="content-layer">
+        <div>
+          <h1 class="hero-title">
+            QuantumTrace
+          </h1>
+          <p class="hero-subtitle" style="margin-top: 16px; font-style: italic;">
+            “Uncovering Cryptographic Debt in the Quantum Dawn”
+          </p>
+        </div>
+
+        <div style="max-width: 900px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px;">
+          <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: #ff453a; font-weight: 600; margin-bottom: 8px;">
+            Ameaça Atual: Harvest Now, Decrypt Later
+          </div>
+          <p class="hero-subtitle" style="font-size: 1.25rem;">
+            Os atacantes já intercetam e armazenam tráfego cifrado. A computação quântica quebrará <strong>RSA</strong> e <strong>ECC</strong> — e a maioria das empresas não sabe onde a sua criptografia legada está escondida.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 2: A SOLUÇÃO (VISIBILIDADE 360°) -->
+    <div class="slide" id="slide-2">
+      <div class="glow-cyan"></div>
+      <div class="content-layer">
+        <div>
+          <h2 class="hero-title gradient-text" style="font-size: clamp(2.6rem, 4.5vw, 4.2rem);">
+            Auditoria automatizada.<br>Leve e não-intrusiva.
+          </h2>
+          <p class="hero-subtitle" style="margin-top: 12px;">
+            Varredura completa em segundos através dos três vetores críticos:
+          </p>
+        </div>
+
+        <div class="grid-3">
+          <div class="card">
+            <div>
+              <div class="card-tag">In-Transit</div>
+              <div class="card-title">Rede</div>
+              <div class="card-desc">Análise profunda de tráfego TLS e capturas de pacotes.</div>
+            </div>
+            <div class="card-footer">.pcap / TLS Handshakes</div>
+          </div>
+
+          <div class="card">
+            <div>
+              <div class="card-tag">In-Use</div>
+              <div class="card-title">Código</div>
+              <div class="card-desc">Deteção estática de algoritmos, chaves e bibliotecas vulneráveis.</div>
+            </div>
+            <div class="card-footer">Python · Java · Go</div>
+          </div>
+
+          <div class="card">
+            <div>
+              <div class="card-tag">At-Rest</div>
+              <div class="card-title">Cloud</div>
+              <div class="card-desc">Inventário de infraestrutura, gestão de chaves e balanceadores.</div>
+            </div>
+            <div class="card-footer">KMS · Load Balancers · ACM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 3: DASHBOARD & AÇÃO PRÁTICA -->
+    <div class="slide" id="slide-3">
+      <div class="glow-amber"></div>
+      <div class="content-layer">
+        <div>
+          <h2 class="hero-title gradient-text" style="font-size: clamp(2.6rem, 4.5vw, 4.2rem);">
+            Do diagnóstico de risco<br>à recomendação NIST PQC.
+          </h2>
+          <p class="hero-subtitle" style="margin-top: 12px;">
+            Priorização rigorosa alimentada pelo <strong>Quantum Risk Score</strong>:
+          </p>
+        </div>
+
+        <div class="split-2">
+          <div class="metric-box">
+            <span class="pill pill-red">Classificação de Risco</span>
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
+              <div>
+                <div style="font-size: 1.15rem; font-weight: 600; color: #ff453a;">Crítico (Shor)</div>
+                <div style="font-size: 0.95rem; color: #86868b; margin-top: 4px;">RSA & ECDSA — quebra completa da chave assimétrica.</div>
+              </div>
+              <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+                <div style="font-size: 1.15rem; font-weight: 600; color: #ff9f0a;">Médio (Grover)</div>
+                <div style="font-size: 0.95rem; color: #86868b; margin-top: 4px;">Cifras simétricas enfraquecidas (ex.: AES-128, 3DES).</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-box">
+            <span class="pill pill-green">Substituição Alinhada ao NIST</span>
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
+              <div>
+                <div style="font-size: 1.15rem; font-weight: 600; color: #30d158;">ML-KEM (FIPS 203)</div>
+                <div style="font-size: 0.95rem; color: #86868b; margin-top: 4px;">Substituição recomendada para troca de chaves e encapsulamento.</div>
+              </div>
+              <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+                <div style="font-size: 1.15rem; font-weight: 600; color: #30d158;">ML-DSA (FIPS 204)</div>
+                <div style="font-size: 0.95rem; color: #86868b; margin-top: 4px;">Norma oficial para assinaturas digitais pós-quânticas.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 4: EXPORTAÇÃO CBOM & FECHO -->
+    <div class="slide" id="slide-4">
+      <div class="glow-cyan"></div>
+      <div class="content-layer">
+        <div>
+          <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.1em; color: #2997ff; font-weight: 600; margin-bottom: 12px;">
+            CycloneDX 1.6 Standard
+          </div>
+          <h2 class="hero-title" style="font-size: clamp(2.8rem, 5vw, 4.8rem); line-height: 1.1;">
+            Cryptography Bill of Materials (CBOM).<br>
+            <span class="accent-cyan">Num único clique.</span>
+          </h2>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 32px; max-width: 950px;">
+          <p class="hero-subtitle" style="font-size: 1.35rem; color: #f5f5f7;">
+            “Transformamos o pânico e a incerteza da ameaça quântica num inventário auditável e num plano de migração executável hoje.”
+          </p>
+          <div style="margin-top: 20px; display: flex; gap: 24px; font-size: 0.9rem; color: #86868b;">
+            <span>✓ Pronto para auditorias</span>
+            <span>✓ Especificação CycloneDX 1.6</span>
+            <span>✓ Exportação JSON nativa</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Navigation Dots -->
+  <div class="nav-bar">
+    <div class="nav-dot active" onclick="goToSlide(0)"></div>
+    <div class="nav-dot" onclick="goToSlide(1)"></div>
+    <div class="nav-dot" onclick="goToSlide(2)"></div>
+    <div class="nav-dot" onclick="goToSlide(3)"></div>
+  </div>
+
+  <div class="key-hint">
+    Navegar: <kbd>→</kbd> <kbd>←</kbd> <kbd>Espaço</kbd> | Fullscreen: <kbd>F</kbd>
+  </div>
+
+  <script>
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.slide');
+    const dots = document.querySelectorAll('.nav-dot');
+
+    function updateSlides() {
+      slides.forEach((slide, idx) => {
+        slide.classList.toggle('active', idx === currentSlide);
+      });
+      dots.forEach((dot, idx) => {
+        dot.classList.toggle('active', idx === currentSlide);
+      });
+    }
+
+    function nextSlide() {
+      if (currentSlide < slides.length - 1) {
+        currentSlide++;
+        updateSlides();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        currentSlide--;
+        updateSlides();
+      }
+    }
+
+    function goToSlide(index) {
+      currentSlide = index;
+      updateSlides();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    });
+
+    // Touch swipe support
+    let touchStartX = 0;
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    });
+    document.addEventListener('touchend', (e) => {
+      const touchEndX = e.changedTouches[0].screenX;
+      if (touchStartX - touchEndX > 50) nextSlide();
+      if (touchEndX - touchStartX > 50) prevSlide();
+    });
+  </script>
+</body>
+</html>
