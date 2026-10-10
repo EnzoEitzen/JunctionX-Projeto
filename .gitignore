@@ -238,3 +238,4 @@ pyproject.toml
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /Dockerfile
+.DS_Store
