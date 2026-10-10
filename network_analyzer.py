@@ -59,8 +59,7 @@ for packet in captures:
     location = f"Packet {packet.number}"
 
     if tls.handshake_type == "1":
-        # ClientHello: o que o cliente oferece
-        role = "ClientHello (oferecido)"
+        role = "ClientHello"
 
         version_raw = getattr(tls, "handshake_extensions_supported_version", None)
         if version_raw and int(version_raw, 16) in TLS_VERSIONS:
@@ -84,8 +83,7 @@ for packet in captures:
                                     notes=f"{role}, algoritmo de assinatura oferecido"))
 
     elif tls.handshake_type == "2":
-        # ServerHello: o que foi negociado
-        role = "ServerHello (negociado)"
+        role = "ServerHello"
 
         version = "TLS 1.2 ou anterior"
         version_raw = getattr(tls, "handshake_extensions_supported_version", None)
