@@ -10,7 +10,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from finding import Finding, save_findings
+from findings import Finding, save_findings
 
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "vendor"}
 COMMENT_PREFIX = {".py": "#", ".go": "//", ".java": ("//", "/*", "*")}
