@@ -1,0 +1,38 @@
+[
+  {
+    "asset": "Servidor Web TLS Legado",
+    "location": "network-capture/network.pcap",
+    "algorithm": "RSA",
+    "key_length": 2048,
+    "library": "OpenSSL",
+    "risk_tier": "Critical",
+    "replacement": "ML-KEM (FIPS 203)"
+  },
+  {
+    "asset": "Módulo de Autenticação",
+    "location": "sample-repos/python/auth.py",
+    "algorithm": "ECDSA",
+    "key_length": 256,
+    "library": "cryptography",
+    "risk_tier": "Critical",
+    "replacement": "ML-DSA (FIPS 204)"
+  },
+  {
+    "asset": "Serviço de Base de Dados",
+    "location": "sample-repos/go/db.go",
+    "algorithm": "AES-128",
+    "key_length": 128,
+    "library": "crypto/cipher",
+    "risk_tier": "Medium",
+    "replacement": "AES-256"
+  },
+  {
+    "asset": "Política de Chaves KMS",
+    "location": "cloud-posture/kms_key_inventory.json",
+    "algorithm": "ML-KEM",
+    "key_length": 768,
+    "library": "AWS KMS",
+    "risk_tier": "Safe",
+    "replacement": "N/A (Conforme PQC)"
+  }
+]
