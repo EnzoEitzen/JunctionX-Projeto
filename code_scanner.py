@@ -2,18 +2,18 @@
 
 Usage:  python code_scanner.py data/code/ [output/results.json]
 
-Python (.py) and Go (.go) rules are filled in. To add Java, write a list of Rule objects like
-PY_RULES and register it in RULES below.
+Python (.py), Go (.go) and Java (.java) rules are filled in. To add another language, write a list
+of Rule objects like PY_RULES and register it in RULES below.
 """
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from findings import Finding, save_findings
+from finding import Finding, save_findings
 
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "vendor"}
-COMMENT_PREFIX = {".py": "#", ".go": "//"}
+COMMENT_PREFIX = {".py": "#", ".go": "//", ".java": ("//", "/*", "*")}
 LOOKAHEAD = 4  # how many following lines to search for a key size
 
 RNG_NOTE = "Non-cryptographic random generator. Use a cryptographic source instead. Not a quantum issue."
@@ -31,15 +31,21 @@ class Rule:
     stop: bool = False                # do not check further rules on this line after a match
 
 
-HASH_NAMES = {
-    "sha1": "SHA-1", "sha224": "SHA-224", "sha256": "SHA-256", "sha384": "SHA-384",
-    "sha512": "SHA-512", "md5": "MD5", "sha3_256": "SHA3-256", "sha3_384": "SHA3-384",
-    "sha3_512": "SHA3-512",
+NAME_MAP = {
+    # hashes
+    "sha1": "SHA-1", "sha-1": "SHA-1", "sha": "SHA-1", "sha224": "SHA-224", "sha-224": "SHA-224",
+    "sha256": "SHA-256", "sha-256": "SHA-256", "sha384": "SHA-384", "sha-384": "SHA-384",
+    "sha512": "SHA-512", "sha-512": "SHA-512", "md5": "MD5", "md2": "MD2",
+    "sha3_256": "SHA3-256", "sha3_384": "SHA3-384", "sha3_512": "SHA3-512",
+    # public-key names as written in Java
+    "rsa": "RSA", "dsa": "DSA", "ec": "ECDSA/ECDH", "ecdh": "ECDH", "dh": "Diffie-Hellman",
+    "diffiehellman": "Diffie-Hellman", "xdh": "XDH", "x25519": "X25519",
+    "ed25519": "Ed25519", "ed448": "Ed448", "eddsa": "EdDSA",
 }
 
 
 def norm(name: str) -> str:
-    return HASH_NAMES.get(name.lower(), name.upper())
+    return NAME_MAP.get(name.lower(), name.upper())
 
 
 # ---------------------------------------------------------------- Python rules
@@ -51,11 +57,11 @@ PY_RULES = [
     Rule(r"algorithms\.AES\(.*modes\.(\w+)\(", "AES-{g1}", "cryptography", infer_size=True, stop=True),
 
     # public-key algorithms (broken by Shor's algorithm)
-    Rule(r"rsa\.generate_private_key\(", "RSA", "cryptography", size_pattern=r"key_size\s*=\s*(\d+)"),
+    Rule(r"rsa\.generate_private_key\(", "RSA", "cryptography", size_pattern=r"key_size\s*=\s*(\w+)"),
     Rule(r"padding\.PKCS1v15\(", "RSA-PKCS1v15", "cryptography", note="RSA with legacy PKCS#1 v1.5 padding"),
     Rule(r"ec\.generate_private_key\(", "ECDSA/ECDH", "cryptography", size_pattern=r"ec\.SECP(\d+)R1"),
-    Rule(r"dsa\.generate_private_key\(", "DSA", "cryptography", size_pattern=r"key_size\s*=\s*(\d+)"),
-    Rule(r"dh\.generate_parameters\(", "Diffie-Hellman", "cryptography", size_pattern=r"key_size\s*=\s*(\d+)"),
+    Rule(r"dsa\.generate_private_key\(", "DSA", "cryptography", size_pattern=r"key_size\s*=\s*(\w+)"),
+    Rule(r"dh\.generate_parameters\(", "Diffie-Hellman", "cryptography", size_pattern=r"key_size\s*=\s*(\w+)"),
     Rule(r"ed25519\.Ed25519(?:Private|Public)Key", "Ed25519", "cryptography"),
     Rule(r"x25519\.X25519(?:Private|Public)Key", "X25519", "cryptography"),
 
@@ -80,7 +86,7 @@ GO_RULES = [
     Rule(r"hmac\.New\(\s*(sha1|sha256|sha512|md5)\.New", "HMAC-{g1}", "crypto/hmac", stop=True),
 
     # public-key algorithms (broken by Shor's algorithm)
-    Rule(r"rsa\.GenerateKey\(", "RSA", "crypto/rsa", size_pattern=r"rsa\.GenerateKey\([^,]*,\s*(\d+)"),
+    Rule(r"rsa\.GenerateKey\(", "RSA", "crypto/rsa", size_pattern=r"rsa\.GenerateKey\([^,]*,\s*(\w+)"),
     Rule(r"rsa\.(?:Sign|Verify|Encrypt|Decrypt)PKCS1v15\(", "RSA-PKCS1v15", "crypto/rsa",
          note="RSA with legacy PKCS#1 v1.5 padding"),
     Rule(r"ecdsa\.(?:GenerateKey|Sign|Verify|SignASN1|VerifyASN1)\(", "ECDSA", "crypto/ecdsa",
@@ -109,7 +115,54 @@ GO_RULES = [
     Rule(r'^\s*"math/rand(?:/v2)?"', "math/rand RNG", "math/rand", note=RNG_NOTE),
 ]
 
-RULES = {".py": PY_RULES, ".go": GO_RULES}  # add ".java": JAVA_RULES later
+# ---------------------------------------------------------------- Java rules
+JAVA_SIZE = (r"(?:initialize\(\s*(\w+)\s*[,)]"       # kpg.initialize(2048) or a constant
+             r"|RSAKeyGenParameterSpec\(\s*(\w+)"       # new RSAKeyGenParameterSpec(2048, ...)
+             r"|(?:secp|prime|P-?)(\d{3}))")             # secp256r1, P-256, prime256v1
+
+JAVA_RULES = [
+    # signatures: one finding for the scheme and one for the hash it uses
+    Rule(r'Signature\.getInstance\("(?:MD5|SHA\d+)withRSA"', "RSA-PKCS1v15", "java.security",
+         note="RSA signature with legacy PKCS#1 v1.5 padding"),
+    Rule(r'Signature\.getInstance\("RSASSA-PSS"', "RSA-PSS", "java.security", note="RSA signature (PSS padding)"),
+    Rule(r'Signature\.getInstance\("\w+withECDSA"', "ECDSA", "java.security"),
+    Rule(r'Signature\.getInstance\("\w+withDSA"', "DSA", "java.security"),
+    Rule(r'Signature\.getInstance\("(MD5|SHA1|SHA224|SHA256|SHA384|SHA512)with', "{g1}", "java.security"),
+    Rule(r'(?:Signature|KeyFactory|KeyPairGenerator)\.getInstance\("(Ed25519|Ed448|EdDSA)"', "{g1}", "java.security"),
+
+    # public-key algorithms (broken by Shor's algorithm)
+    Rule(r'KeyPairGenerator\.getInstance\("(RSA|DSA|EC|DH|DiffieHellman|XDH|X25519)"', "{g1}", "java.security",
+         size_pattern=JAVA_SIZE),
+    Rule(r'KeyAgreement\.getInstance\("(ECDH|DH|DiffieHellman|X25519|XDH)"', "{g1}", "javax.crypto"),
+
+    # combined calls
+    Rule(r'Mac\.getInstance\("Hmac(SHA1|SHA224|SHA256|SHA384|SHA512|MD5)"', "HMAC-{g1}", "javax.crypto"),
+    Rule(r'SecretKeyFactory\.getInstance\("PBKDF2WithHmac(SHA1|SHA224|SHA256|SHA384|SHA512)"',
+         "PBKDF2-HMAC-{g1}", "javax.crypto", note="password-based key derivation"),
+
+    # symmetric ciphers (the transformation may be a constant, see string_constants)
+    Rule(r'Cipher\.getInstance\("AES(?:_\d+)?/(\w+)/', "AES-{g1}", "javax.crypto", infer_size=True),
+    Rule(r'Cipher\.getInstance\("AES(?:_\d+)?"\)', "AES-ECB", "javax.crypto", infer_size=True,
+         note="no mode given: Java defaults to ECB"),
+    Rule(r'Cipher\.getInstance\("(?:DESede|TripleDES)', "3DES", "javax.crypto"),
+    Rule(r'Cipher\.getInstance\("DES(?:/|")', "DES", "javax.crypto"),
+    Rule(r'Cipher\.getInstance\("(?:RC4|ARCFOUR)', "RC4", "javax.crypto"),
+    Rule(r'Cipher\.getInstance\("RSA', "RSA", "javax.crypto", note="RSA encryption"),
+
+    # hashes
+    Rule(r'MessageDigest\.getInstance\("(SHA-1|SHA1|SHA|MD5|MD2|SHA-224|SHA-256|SHA-384|SHA-512)"', "{g1}", "java.security"),
+    Rule(r'MessageDigest\.getInstance\("(SHA3-\d+)"', "{g1}", "java.security"),
+
+    # post-quantum (good news)
+    Rule(r'(?:KeyPairGenerator|KEM|Signature)\.getInstance\("(ML-KEM(?:-\d+)?|ML-DSA(?:-\d+)?|SLH-DSA[\w-]*)"',
+         "{g1}", "java.security", note="NIST post-quantum standard"),
+    Rule(r'import\s+org\.bouncycastle\.pqc', "PQC library (BouncyCastle)", "bouncycastle"),
+
+    # not a quantum issue, but worth reporting
+    Rule(r'\bnew\s+Random\(|\bMath\.random\(|\bThreadLocalRandom\b', "java.util.Random RNG", "java.util", note=RNG_NOTE),
+]
+
+RULES = {".py": PY_RULES, ".go": GO_RULES, ".java": JAVA_RULES}
 
 
 # ---------------------------------------------------------------- helpers
@@ -136,6 +189,24 @@ def infer_key_size(text: str, ext: str):
             name, literal = m.group(1), m.group(2)
             if "key" in name.lower():
                 found[len(literal) * 8] = f"key size inferred from {name}; hardcoded key in source"
+    elif ext == ".java":
+        for m in re.finditer(r"(?:static\s+)?(?:final\s+)?int\s+(\w+)\s*=\s*(\d+)\s*;", text):
+            name, value = m.group(1), int(m.group(2))
+            low = name.lower()
+            if "key" not in low:
+                continue
+            if "bits" in low:
+                found[value] = f"key size inferred from {name}"
+            elif re.search(r"len|bytes", low):
+                found[value * 8] = f"key size inferred from {name}"
+            elif "size" in low:
+                found[value if value in (128, 192, 256) else value * 8] = f"key size inferred from {name}"
+        for m in re.finditer(r'byte\[\]\s+(\w+)\s*=\s*"(.*?)"\.getBytes', text):
+            name, literal = m.group(1), m.group(2)
+            if "key" in name.lower():
+                found[len(literal) * 8] = f"key size inferred from {name}; hardcoded key in source"
+        for m in re.finditer(r"\.init\(\s*(128|192|256)\b", text):
+            found[int(m.group(1))] = "key size from KeyGenerator.init"
     if len(found) == 1:
         return next(iter(found.items()))
     return None, "AES key size could not be determined" if not found else "several possible AES key sizes found"
@@ -155,6 +226,29 @@ def detect_aes_mode(text: str, ext: str):
     return None, "AES mode could not be determined"
 
 
+def int_constants(text: str, ext: str) -> dict:
+    """Integer constants in the file, so that initialize(KEY_BITS) can be resolved to a number."""
+    if ext == ".java":
+        pattern = r"(?:static\s+)?(?:final\s+)?int\s+(\w+)\s*=\s*(\d+)\s*;"
+    else:
+        pattern = r"^\s*(?:const\s+|var\s+)?([A-Za-z_]\w*)\s*=\s*(\d+)\s*$"
+    return {m.group(1): int(m.group(2)) for m in re.finditer(pattern, text, re.M)}
+
+
+def string_constants(text: str, ext: str) -> dict:
+    """Java string constants, so that Cipher.getInstance(TRANSFORMATION) can be read as its literal."""
+    if ext != ".java":
+        return {}
+    pattern = r'(?:static\s+)?(?:final\s+)?String\s+(\w+)\s*=\s*"([^"]*)"\s*;'
+    return {m.group(1): m.group(2) for m in re.finditer(pattern, text)}
+
+
+def substitute_constants(line: str, str_consts: dict) -> str:
+    return re.sub(r"getInstance\((\w+)",
+                  lambda m: f'getInstance("{str_consts[m.group(1)]}"' if m.group(1) in str_consts else m.group(0),
+                  line)
+
+
 def load_versions(root: Path) -> dict:
     """Read pinned library versions: requirements.txt (Python) and go.mod (Go)."""
     versions = {}
@@ -170,6 +264,18 @@ def load_versions(root: Path) -> dict:
             versions["go"] = m.group(1)
         for dep in re.finditer(r"^\s*(?:require\s+)?([\w./-]+\.[\w./-]+)\s+(v[\w.+-]+)", text, re.M):
             versions[dep.group(1)] = dep.group(2)
+    for pom in root.rglob("pom.xml"):
+        text = pom.read_text(errors="ignore")
+        m = re.search(r"<(?:java\.version|maven\.compiler\.(?:release|source|target)|release)>\s*([\d.]+)\s*<", text)
+        if m:
+            versions["java"] = m.group(1)
+        for dep in re.finditer(r"<artifactId>\s*(bc[\w.-]+)\s*</artifactId>\s*<version>\s*([\w.]+)\s*</version>", text):
+            versions["bouncycastle"] = dep.group(2)
+    for gradle in list(root.rglob("build.gradle")) + list(root.rglob("build.gradle.kts")):
+        text = gradle.read_text(errors="ignore")
+        m = re.search(r"(?:sourceCompatibility\s*=\s*(?:JavaVersion\.VERSION_)?['\"]?|JavaLanguageVersion\.of\()([\d_.]+)", text)
+        if m:
+            versions["java"] = m.group(1).replace("_", ".")
     return versions
 
 
@@ -178,6 +284,8 @@ def label_library(library: str, ext: str, versions: dict) -> str:
         return f"{library} {versions[library]}"
     if ext == ".go" and library.startswith(("crypto/", "math/")) and "go" in versions:
         return f"{library} (Go {versions['go']})"
+    if ext == ".java" and library.startswith(("java.", "javax.")) and "java" in versions:
+        return f"{library} (Java {versions['java']})"
     return library
 
 
@@ -188,12 +296,15 @@ def scan_file(path: Path, root: Path, versions: dict) -> list:
     lines = text.splitlines()
     asset = str(path.relative_to(root))
     findings = []
+    consts = int_constants(text, ext)
+    str_consts = string_constants(text, ext)
 
     for i, line in enumerate(lines):
         if line.strip().startswith(COMMENT_PREFIX[ext]):
             continue
+        match_line = substitute_constants(line, str_consts) if str_consts else line
         for rule in RULES[ext]:
-            m = re.search(rule.pattern, line)
+            m = re.search(rule.pattern, match_line)
             if not m:
                 continue
             g1 = norm(m.group(1)) if m.groups() else ""
@@ -206,7 +317,9 @@ def scan_file(path: Path, root: Path, versions: dict) -> list:
                 window = "\n".join(lines[i:i + 1 + LOOKAHEAD])
                 sm = re.search(rule.size_pattern, window)
                 if sm:
-                    key_length = int(sm.group(1))
+                    value = next((g for g in sm.groups() if g), None)
+                    if value is not None:
+                        key_length = int(value) if value.isdigit() else consts.get(value)
             if rule.mode_from_file:
                 mode, mode_note = detect_aes_mode(text, ext)
                 if mode:
