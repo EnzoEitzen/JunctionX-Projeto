@@ -1,0 +1,178 @@
+[
+  {
+    "source": "code",
+    "asset": "python\\artifact_manifest.py",
+    "location": "line 6",
+    "algorithm": "SHA-384",
+    "key_length": null,
+    "library": "hashlib",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\artifact_manifest.py",
+    "location": "line 14",
+    "algorithm": "HMAC-SHA-256",
+    "key_length": null,
+    "library": "hmac",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\legacy_accounts.py",
+    "location": "line 5",
+    "algorithm": "MD5",
+    "key_length": null,
+    "library": "hashlib",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\license_token.py",
+    "location": "line 6",
+    "algorithm": "RSA",
+    "key_length": 1024,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\license_token.py",
+    "location": "line 11",
+    "algorithm": "RSA-PKCS1v15",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "RSA with legacy PKCS#1 v1.5 padding"
+  },
+  {
+    "source": "code",
+    "asset": "python\\license_token.py",
+    "location": "line 11",
+    "algorithm": "SHA-1",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\license_token.py",
+    "location": "line 16",
+    "algorithm": "RSA-PKCS1v15",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "RSA with legacy PKCS#1 v1.5 padding"
+  },
+  {
+    "source": "code",
+    "asset": "python\\license_token.py",
+    "location": "line 16",
+    "algorithm": "SHA-1",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\member_credentials.py",
+    "location": "line 13",
+    "algorithm": "PBKDF2-HMAC-SHA-256",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "password-based key derivation"
+  },
+  {
+    "source": "code",
+    "asset": "python\\member_credentials.py",
+    "location": "line 18",
+    "algorithm": "PBKDF2-HMAC-SHA-256",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "password-based key derivation"
+  },
+  {
+    "source": "code",
+    "asset": "python\\report_export.py",
+    "location": "line 11",
+    "algorithm": "AES-ECB",
+    "key_length": 128,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "key size inferred from EXPORT_KEY; hardcoded key in source; ECB mode leaks patterns and is insecure regardless of quantum computers"
+  },
+  {
+    "source": "code",
+    "asset": "python\\report_export.py",
+    "location": "line 17",
+    "algorithm": "random-module RNG",
+    "key_length": null,
+    "library": "random",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "Non-cryptographic random generator. Use secrets or os.urandom. Not a quantum issue."
+  },
+  {
+    "source": "code",
+    "asset": "python\\secure_transfer.py",
+    "location": "line 16",
+    "algorithm": "AES-GCM",
+    "key_length": 256,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "key size inferred from KEY_LEN"
+  },
+  {
+    "source": "code",
+    "asset": "python\\secure_transfer.py",
+    "location": "line 21",
+    "algorithm": "AES-GCM",
+    "key_length": 256,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": "key size inferred from KEY_LEN"
+  },
+  {
+    "source": "code",
+    "asset": "python\\update_feed.py",
+    "location": "line 5",
+    "algorithm": "SHA-1",
+    "key_length": null,
+    "library": "hashlib",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  },
+  {
+    "source": "code",
+    "asset": "python\\webhook_signature.py",
+    "location": "line 5",
+    "algorithm": "Ed25519",
+    "key_length": null,
+    "library": "cryptography 46.0.5",
+    "risk_tier": "Unclassified",
+    "replacement": null,
+    "notes": null
+  }
+]
