@@ -318,18 +318,42 @@ def load_and_prepare_findings(findings_json=None):
 
     return pd.DataFrame(processed), loaded_source
 
+@st.cache_data(show_spinner=False)
+def sample_results():
+    """Default report: the example data in the repository data/ folder, analysed once per server start
+    with the same pipeline as a new audit. Falls back to output/results.json if the pipeline cannot run."""
+    import shutil, tempfile
+    from pathlib import Path as _P
+    src = _P("data")
+    if src.is_dir():
+        try:
+            from integration import run_analysis
+            run_dir = _P(tempfile.gettempdir()) / "quantumtrace_uploads" / "sample-data"
+            shutil.rmtree(run_dir, ignore_errors=True)
+            shutil.copytree(src, run_dir / "data")
+            return run_analysis(run_dir / "data"), "Sample data · data/"
+        except Exception as exc:
+            print(f"[QuantumTrace] Sample analysis failed, using output/results.json: {exc}")
+    return None, ""
+
+
 _results = st.session_state.get("results_json")
+if not _results:
+    with st.spinner("Loading sample data…"):
+        _results, _label = sample_results()
+    if _results:
+        st.session_state["results_label"] = _label
 df_findings, data_source_label = load_and_prepare_findings(_results)
 if df_findings.empty:
     st.markdown(
         '<div style="max-width:620px;margin:18vh auto;text-align:center;">'
         '<div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#2997ff;margin-bottom:12px;">No report loaded</div>'
         '<div style="font-size:clamp(2rem,5vw,3rem);font-weight:700;letter-spacing:-.04em;color:#fff;margin-bottom:14px;">Start with your data.</div>'
-        '<div style="font-size:15px;color:#86868b;line-height:1.55;">No analysis results were found. Upload a data folder on the welcome page to create a report.</div></div>',
+        '<div style="font-size:15px;color:#86868b;line-height:1.55;">No analysis results were found. Use New audit to upload your files and create a report.</div></div>',
         unsafe_allow_html=True,
     )
     _c = st.columns([1, 1, 1])[1]
-    if _c.button("Go to welcome page", use_container_width=True):
+    if _c.button("New audit", use_container_width=True):
         st.switch_page("pages/welcome.py")
     st.stop()
 total_assets = len(df_findings)
@@ -390,7 +414,7 @@ st.markdown(
             <a href="#audit" class="nav-link">Live Audit</a>
             <a href="#roadmap" class="nav-link">Migration</a>
             <a href="#cbom" class="nav-link">CBOM</a>
-            <a href="/" target="_self" class="nav-link">New audit</a>
+            <a href="/new-audit" target="_self" class="nav-link">New audit</a>
             <a href="#audit" class="nav-cta">Inspect Environment</a>
         </div>
     </div>

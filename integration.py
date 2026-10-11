@@ -107,12 +107,25 @@ def run_analysis(data_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     _purge_old(run_dir.parent)
     try:
+        ran, failures = [], []
         for script, folder, out_name in SCANNERS:
+            src = data_dir / folder
+            # Skip a scanner when nothing was uploaded for it (any single file type is enough).
+            if not src.is_dir() or not any(p.is_file() for p in src.rglob("*")):
+                continue
             if not (ROOT / script).exists():
-                raise RuntimeError(f"Scanner not found: {script}")
-            if not (data_dir / folder).exists():
-                raise RuntimeError(f"Input folder not found: {folder}")
-            _run([ROOT / script, data_dir / folder, out_dir / out_name])
+                failures.append(f"{script}: scanner not found")
+                continue
+            try:
+                _run([ROOT / script, src, out_dir / out_name])
+                ran.append(script)
+            except Exception as exc:          # one scanner failing must not block the others
+                failures.append(str(exc))
+                print(f"[QuantumTrace] {exc}", file=sys.stderr)
+        if not ran:
+            if failures:
+                raise RuntimeError("No scanner could analyze the uploaded files:\n\n" + "\n\n".join(failures))
+            raise RuntimeError("No supported files were found in the upload.")
 
         results_path = out_dir / "results.json"
         try:
