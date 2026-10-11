@@ -107,6 +107,9 @@ def parse_kms_key_spec(key_spec, key_usage=None):
     if key_spec == "SYMMETRIC_DEFAULT":
         return SYMMETRIC_DEFAULT_ALGORITHM, SYMMETRIC_DEFAULT_KEY_LENGTH
 
+    if key_spec == "ECC_NIST_EDWARDS25519":
+        return "Ed25519", 256
+
     match = re.fullmatch(r"RSA_(\d+)", key_spec)
     if match:
         return "RSA", int(match.group(1))
@@ -155,6 +158,19 @@ def parse_acm_key_algorithm(key_algorithm):
     return key_algorithm, None
 
 
+def parse_acm_signature_hash(signature_algorithm):
+    """Hash used in a certificate signature: SHA256WITHRSA -> "SHA-256", ECDSA_WITH_SHA384 -> "SHA-384"."""
+    if not isinstance(signature_algorithm, str):
+        return None
+    upper = signature_algorithm.upper()
+    match = re.search(r"SHA-?(\d+)", upper)
+    if match:
+        return f"SHA-{match.group(1)}"
+    if "MD5" in upper:
+        return "MD5"
+    return None
+
+
 # --------------------------------------------------------------------------
 # Scanners: each one returns a list of Finding objects
 #
@@ -197,6 +213,16 @@ def scan_kms(input_dir):
             notes = f"Unrecognised KeySpec: {key_spec}"
             print(f"[WARN] KMS key {key_id}: unrecognised KeySpec "
                   f"'{key_spec}', key_length left empty")
+
+        # KeyUsage tells the classifier whether an asymmetric key signs or encrypts, so it does not
+        # have to guess from the alias name. A key that is not Enabled is mentioned for context.
+        extra = []
+        if key.get("KeyUsage"):
+            extra.append(f"KeyUsage {key['KeyUsage']}")
+        if key.get("KeyState") and key["KeyState"] != "Enabled":
+            extra.append(f"KeyState {key['KeyState']}")
+        if extra:
+            notes = "; ".join(filter(None, [notes] + extra))
 
         findings.append(Finding(
             source=SOURCE,
@@ -247,10 +273,33 @@ def scan_acm(input_dir):
             library=LIB_ACM,
             notes=notes,
         ))
+
+        sig_hash = parse_acm_signature_hash(cert.get("SignatureAlgorithm"))
+        if sig_hash:
+            findings.append(Finding(
+                source=SOURCE,
+                asset=name,
+                location=f"{ACM_FILENAME}, SignatureAlgorithm",
+                algorithm=sig_hash,
+                key_length=None,
+                library=LIB_ACM,
+                notes=f"Certificate signature: {cert.get('SignatureAlgorithm')}",
+            ))
     return findings
 
 
-def scan_load_balancers(input_dir):
+def load_cert_names(input_dir):
+    """Map certificate ARN -> domain name, so a listener can say which certificate it serves."""
+    try:
+        with open(os.path.join(input_dir, ACM_FILENAME), "r", encoding="utf-8") as f:
+            certs = json.load(f).get("Certificates", [])
+        return {c["CertificateArn"]: c.get("DomainName") for c in certs
+                if isinstance(c, dict) and c.get("CertificateArn") and c.get("DomainName")}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def scan_load_balancers(input_dir, cert_names=None):
     """Load balancers: read SslPolicy, save it as algorithm 'TLS Policy'.
 
     Finding has no dedicated field for the policy name, so it goes into
@@ -290,6 +339,11 @@ def scan_load_balancers(input_dir):
             port = listener.get("Port")
             if port is not None:
                 notes += f"; listener port {port}"
+            cert_arns = [c.get("CertificateArn") for c in listener.get("Certificates") or []
+                         if isinstance(c, dict)]
+            domains = [cert_names[a] for a in cert_arns if cert_names and a in cert_names]
+            if domains:
+                notes += f"; certificate {', '.join(domains)}"
 
             findings.append(Finding(
                 source=SOURCE,
@@ -328,7 +382,7 @@ def main():
 
     kms_findings = scan_kms(args.input_dir)
     acm_findings = scan_acm(args.input_dir)
-    lb_findings = scan_load_balancers(args.input_dir)
+    lb_findings = scan_load_balancers(args.input_dir, load_cert_names(args.input_dir))
     findings = kms_findings + acm_findings + lb_findings
 
     # save_findings() creates the output folder if needed.

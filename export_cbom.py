@@ -21,7 +21,9 @@ from cyclonedx.model import Property
 from cyclonedx.model.bom import Bom
 from cyclonedx.model.component import Component, ComponentType
 from cyclonedx.model.crypto import (
+    AlgorithmProperties,
     CryptoAssetType,
+    CryptoPrimitive,
     CryptoProperties,
     RelatedCryptoMaterialType,
 )
@@ -91,6 +93,28 @@ def _is_quantum_vulnerable(algo: Optional[str]) -> bool:
     return any(c in algo_upper for c in CLASSIC_ALGORITHMS)
 
 
+def _primitive(algo: str) -> CryptoPrimitive:
+    a = algo.upper()
+    for keys, prim in ((("ML-KEM", "KYBER"), CryptoPrimitive.KEM),
+                       (("ECDH", "X25519", "DH", "SECP", "MLKEM"), CryptoPrimitive.KEY_AGREE),
+                       (("DSA", "ED25519", "SIGN", "PSS", "PKCS1"), CryptoPrimitive.SIGNATURE),
+                       (("RSA",), CryptoPrimitive.PKE), (("HMAC",), CryptoPrimitive.MAC),
+                       (("SHA", "MD5"), CryptoPrimitive.HASH), (("RC4", "CHACHA"), CryptoPrimitive.STREAM_CIPHER),
+                       (("GCM", "CCM"), CryptoPrimitive.AE), (("AES", "DES", "BLOWFISH"), CryptoPrimitive.BLOCK_CIPHER)):
+        if any(k in a for k in keys):
+            return prim
+    return CryptoPrimitive.UNKNOWN
+
+
+def _vulnerable_from_risk(finding: Dict[str, Any], algo: Optional[str]) -> bool:
+    tier = (_clean_str(finding.get("risk_tier")) or "").lower()
+    if tier in ("critical", "medium"):
+        return True
+    if tier == "safe":
+        return False
+    return _is_quantum_vulnerable(algo)
+
+
 def _infer_asset_type(finding: Dict[str, Any]) -> CryptoAssetType:
     raw_type = _clean_str(finding.get("asset_type"))
     if raw_type:
@@ -103,6 +127,11 @@ def _infer_asset_type(finding: Dict[str, Any]) -> CryptoAssetType:
     algo = (_clean_str(finding.get("algorithm")) or "").upper()
     target = (_clean_str(finding.get("asset")) or _clean_str(finding.get("target")) or "").lower()
 
+    loc = (_clean_str(finding.get("location")) or "").lower()
+    if "acm_certificates" in loc:
+        return CryptoAssetType.CERTIFICATE
+    if "load_balancer" in loc:
+        return CryptoAssetType.PROTOCOL
     if "acm" in target or "cert" in target or "certificate" in target:
         return CryptoAssetType.CERTIFICATE
     if "kms" in target or "key" in target:
@@ -149,7 +178,7 @@ def create_crypto_component(finding: Dict[str, Any], index: int) -> Component:
     algo_raw = _clean_str(finding.get("algorithm"))
     algo_norm = _normalize_algorithm_name(algo_raw)
     asset_type = _infer_asset_type(finding)
-    
+
     # Obtém o nome do ficheiro ou alvo (suporta 'asset' do findings.py ou 'target')
     target = _clean_str(finding.get("asset")) or _clean_str(finding.get("target")) or "unspecified-target"
     key_length = _clean_int(finding.get("key_length")) or _clean_int(finding.get("key_size"))
@@ -158,6 +187,16 @@ def create_crypto_component(finding: Dict[str, Any], index: int) -> Component:
     version = str(key_length) if key_length else _clean_str(finding.get("version"))
 
     crypto_props = CryptoProperties(asset_type=asset_type)
+    if asset_type == CryptoAssetType.ALGORITHM:
+        tier = (_clean_str(finding.get("risk_tier")) or "").lower()
+        level = 0 if tier == "critical" else (1 if tier == "medium" else (5 if _is_pqc(algo_raw) or (key_length or 0) >= 256 else None))
+        crypto_props = CryptoProperties(
+            asset_type=asset_type,
+            algorithm_properties=AlgorithmProperties(
+                primitive=_primitive(algo_norm),
+                nist_quantum_security_level=level,
+            ),
+        )
 
     if asset_type == CryptoAssetType.CERTIFICATE and hasattr(crypto_props, "certificate_properties"):
         cert_props = getattr(crypto_props, "certificate_properties", None)
@@ -176,7 +215,7 @@ def create_crypto_component(finding: Dict[str, Any], index: int) -> Component:
     component = Component(
         name=name,
         version=version,
-        type=ComponentType.APPLICATION,
+        type=ComponentType.CRYPTOGRAPHIC_ASSET,
         bom_ref=bom_ref,
         crypto_properties=crypto_props,
     )
@@ -190,7 +229,7 @@ def create_crypto_component(finding: Dict[str, Any], index: int) -> Component:
         ("quantumtrace:library", _clean_str(finding.get("library"))),
         ("quantumtrace:risk_tier", _clean_str(finding.get("risk_tier")) or _clean_str(finding.get("severity"))),
         ("quantumtrace:replacement", _clean_str(finding.get("replacement"))),
-        ("quantumtrace:quantum_vulnerable", str(_is_quantum_vulnerable(algo_raw)).lower()),
+        ("quantumtrace:quantum_vulnerable", str(_vulnerable_from_risk(finding, algo_raw)).lower()),
         ("quantumtrace:pqc", str(_is_pqc(algo_raw)).lower()),
         ("quantumtrace:notes", _clean_str(finding.get("notes") or finding.get("note") or finding.get("details"))),
         ("quantumtrace:cve", _clean_str(finding.get("cve"))),
@@ -243,7 +282,7 @@ def export_cbom_json(findings: List[Dict[str, Any]], indent: int = 2) -> str:
 def validate_cbom_json(json_str: str) -> Tuple[bool, Optional[str]]:
     validator = JsonStrictValidator(SchemaVersion.V1_6)
     try:
-        validation_error = validator.validate(json_str)
+        validation_error = validator.validate_str(json_str)
         if validation_error:
             return False, str(validation_error)
         return True, None
@@ -295,6 +334,9 @@ def load_findings_from_path(target_path: Path) -> List[Dict[str, Any]]:
         files = [target_path]
     elif target_path.is_dir():
         files = sorted(list(target_path.glob("*.json")))
+        # results.json already merges every scanner output: use it alone to avoid duplicates.
+        if (target_path / "results.json").exists():
+            files = [target_path / "results.json"]
         if not files:
             sys.stderr.write(f"Aviso: Nenhum ficheiro .json encontrado na pasta '{target_path}'.\n")
             return []

@@ -253,7 +253,7 @@ RULES = [
     (re.compile(r"^(?:PBKDF2-)?HMAC-(.+)$"), _hmac),
     (re.compile(r"^HMAC$"), _hmac_bare),
     (re.compile(r"^(?:(?:RSA|DSA|DH|DHE|ECDSA|ECDH|ECDHE|ECIES|EC|XDH|X25519|X448|ED25519|ED448|EDDSA"
-                r"|ELGAMAL|DIFFIE-HELLMAN)(?![A-Z0-9])|SECP\d+[RK]1|PRIME\d+V1|BRAINPOOL|CURVE25519|CURVE448)"),
+                r"|ELGAMAL|DIFFIE-HELLMAN)(?![A-Z0-9])|SECP\d+[RK]1|PRIME\d+V1|BRAINPOOL|CURVE25519|CURVE448|FFDHE\d+)"),
      _asymmetric),
     (re.compile(r"^AES"), _aes),
     (re.compile(r"^CHACHA20"), _chacha),
@@ -310,9 +310,12 @@ def _average(tiers):
 def summarize(findings):
     """Quantum Risk Score plus breakdowns. The dashboard can call this directly."""
     items = {}   # unique (source, asset, algorithm, key_length) -> worst tier seen
+    rsa_assets = {(f.source, f.asset) for f in findings if _key(f.algorithm) == "RSA"}
     for f in findings:
         if f.risk_tier not in WEIGHTS:
             continue
+        if re.match(r"^RSA-(PKCS1V15|PSS|OAEP)$", _key(f.algorithm)) and (f.source, f.asset) in rsa_assets:
+            continue   # padding of an RSA key that is already counted: not a second asset
         k = (f.source, f.asset, f.algorithm, f.key_length)
         if k not in items or WEIGHTS[f.risk_tier] > WEIGHTS[items[k]]:
             items[k] = f.risk_tier

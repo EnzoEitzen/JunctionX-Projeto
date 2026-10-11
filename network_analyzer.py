@@ -1,31 +1,53 @@
 import asyncio
 import glob
 import os
+import re
 import sys
 
 import pyshark
 
 from findings import Finding, save_findings
 
-TSHARK_PATH = os.environ.get("TSHARK_PATH") or None   # None -> pyshark finds tshark on PATH
-DEFAULT_OUTPUT = "output/results.json"
+TSHARK_PATH = os.environ.get("TSHARK_PATH") or None  # None -> pyshark finds tshark on PATH
+DEFAULT_OUTPUT = "output/network_analyzer_output.json"
 
 TLS_VERSIONS = {0x0301: "TLS 1.0", 0x0302: "TLS 1.1", 0x0303: "TLS 1.2", 0x0304: "TLS 1.3"}
 
 CIPHER_SUITES = {
-    0x002F: ("TLS_RSA_WITH_AES_128_CBC_SHA",            "RSA",   "AES-CBC", 128, "SHA-1"),
-    0x0035: ("TLS_RSA_WITH_AES_256_CBC_SHA",            "RSA",   "AES-CBC", 256, "SHA-1"),
-    0x009C: ("TLS_RSA_WITH_AES_128_GCM_SHA256",         "RSA",   "AES-GCM", 128, None),
-    0x009D: ("TLS_RSA_WITH_AES_256_GCM_SHA384",         "RSA",   "AES-GCM", 256, None),
-    0xC013: ("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",      "ECDHE", "AES-CBC", 128, "SHA-1"),
-    0xC014: ("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",      "ECDHE", "AES-CBC", 256, "SHA-1"),
+    0x002F: ("TLS_RSA_WITH_AES_128_CBC_SHA", "RSA", "AES-CBC", 128, "SHA-1"),
+    0x0035: ("TLS_RSA_WITH_AES_256_CBC_SHA", "RSA", "AES-CBC", 256, "SHA-1"),
+    0x009C: ("TLS_RSA_WITH_AES_128_GCM_SHA256", "RSA", "AES-GCM", 128, None),
+    0x009D: ("TLS_RSA_WITH_AES_256_GCM_SHA384", "RSA", "AES-GCM", 256, None),
+    0xC013: ("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "ECDHE", "AES-CBC", 128, "SHA-1"),
+    0xC014: ("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "ECDHE", "AES-CBC", 256, "SHA-1"),
     0xC02B: ("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "ECDHE", "AES-GCM", 128, None),
     0xC02C: ("TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "ECDHE", "AES-GCM", 256, None),
-    0xC02F: ("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",   "ECDHE", "AES-GCM", 128, None),
-    0xC030: ("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",   "ECDHE", "AES-GCM", 256, None),
-    0x1301: ("TLS_AES_128_GCM_SHA256",                  None,    "AES-GCM", 128, None),
-    0x1302: ("TLS_AES_256_GCM_SHA384",                  None,    "AES-GCM", 256, None),
-    0x1303: ("TLS_CHACHA20_POLY1305_SHA256",            None,    "ChaCha20-Poly1305", 256, None),
+    0xC02F: ("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "ECDHE", "AES-GCM", 128, None),
+    0xC030: ("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "ECDHE", "AES-GCM", 256, None),
+    0x1301: ("TLS_AES_128_GCM_SHA256", None, "AES-GCM", 128, None),
+    0x1302: ("TLS_AES_256_GCM_SHA384", None, "AES-GCM", 256, None),
+    0x1303: ("TLS_CHACHA20_POLY1305_SHA256", None, "ChaCha20-Poly1305", 256, None),
+    0x1304: ("TLS_AES_128_CCM_SHA256", None, "AES-CCM", 128, None),
+    # legacy suites a real capture may contain
+    0x0004: ("TLS_RSA_WITH_RC4_128_MD5", "RSA", "RC4", 128, "MD5"),
+    0x0005: ("TLS_RSA_WITH_RC4_128_SHA", "RSA", "RC4", 128, "SHA-1"),
+    0x000A: ("TLS_RSA_WITH_3DES_EDE_CBC_SHA", "RSA", "3DES", 168, "SHA-1"),
+    0x003C: ("TLS_RSA_WITH_AES_128_CBC_SHA256", "RSA", "AES-CBC", 128, None),
+    0x003D: ("TLS_RSA_WITH_AES_256_CBC_SHA256", "RSA", "AES-CBC", 256, None),
+    0x0033: ("TLS_DHE_RSA_WITH_AES_128_CBC_SHA", "DHE", "AES-CBC", 128, "SHA-1"),
+    0x0039: ("TLS_DHE_RSA_WITH_AES_256_CBC_SHA", "DHE", "AES-CBC", 256, "SHA-1"),
+    0x0067: ("TLS_DHE_RSA_WITH_AES_128_CBC_SHA256", "DHE", "AES-CBC", 128, None),
+    0x006B: ("TLS_DHE_RSA_WITH_AES_256_CBC_SHA256", "DHE", "AES-CBC", 256, None),
+    0x009E: ("TLS_DHE_RSA_WITH_AES_128_GCM_SHA256", "DHE", "AES-GCM", 128, None),
+    0x009F: ("TLS_DHE_RSA_WITH_AES_256_GCM_SHA384", "DHE", "AES-GCM", 256, None),
+    0xC009: ("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA", "ECDHE", "AES-CBC", 128, "SHA-1"),
+    0xC00A: ("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", "ECDHE", "AES-CBC", 256, "SHA-1"),
+    0xC023: ("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "ECDHE", "AES-CBC", 128, None),
+    0xC024: ("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "ECDHE", "AES-CBC", 256, None),
+    0xC027: ("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "ECDHE", "AES-CBC", 128, None),
+    0xC028: ("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "ECDHE", "AES-CBC", 256, None),
+    0xCCA8: ("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "ECDHE", "ChaCha20-Poly1305", 256, None),
+    0xCCA9: ("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "ECDHE", "ChaCha20-Poly1305", 256, None),
 }
 
 KEY_EXCHANGE_GROUPS = {
@@ -34,12 +56,19 @@ KEY_EXCHANGE_GROUPS = {
     0x0019: "secp521r1",
     0x001D: "x25519",
     0x001E: "x448",
+    0x0100: "ffdhe2048",
+    0x0101: "ffdhe3072",
+    0x0102: "ffdhe4096",
+    0x0200: "MLKEM512",
+    0x0201: "MLKEM768",
+    0x0202: "MLKEM1024",
     0x11EB: "SecP256r1MLKEM768",
     0x11EC: "X25519MLKEM768",
     0x11ED: "SecP384r1MLKEM1024",
     0x6399: "X25519Kyber768Draft00",
 }
-HYBRID_PQC_GROUPS = {"SecP256r1MLKEM768", "X25519MLKEM768", "SecP384r1MLKEM1024", "X25519Kyber768Draft00"}
+HYBRID_PQC_GROUPS = {"SecP256r1MLKEM768", "X25519MLKEM768", "SecP384r1MLKEM1024", "X25519Kyber768Draft00",
+                     "MLKEM512", "MLKEM768", "MLKEM1024"}  # the last three are pure ML-KEM, not hybrid
 
 
 def to_int(text):
@@ -80,12 +109,13 @@ def analyse_pcap(pcap_file, findings):
 
             for tls in packet.get_multiple_layers("tls"):
                 kinds = values(tls, "handshake_type")
-                if "1" in kinds:      # ClientHello
+                if "1" in kinds:  # ClientHello
                     s["port"] = packet.tcp.dstport
                     s["server_ip"] = ip.dst if ip else None
                     s["sni"] = (values(tls, "handshake_extensions_server_name") or [None])[0]
-                    s["client_groups"] = [group_name(to_int(v)) for v in values(tls, "handshake_extensions_key_share_group")]
-                if "2" in kinds:      # ServerHello
+                    s["client_groups"] = [group_name(to_int(v)) for v in
+                                          values(tls, "handshake_extensions_key_share_group")]
+                if "2" in kinds:  # ServerHello
                     s["port"] = packet.tcp.srcport
                     s["server_ip"] = ip.src if ip else None
                     s["packet"] = packet.number
@@ -99,10 +129,10 @@ def analyse_pcap(pcap_file, findings):
         try:
             captures.close()
         except Exception:
-            pass 
+            pass
 
     for s in sessions.values():
-        if "suite" in s: 
+        if "suite" in s:
             findings.extend(session_findings(s))
 
 
@@ -121,7 +151,7 @@ def session_findings(s):
         return out
     suite, kex, family, bits, mac = CIPHER_SUITES[suite_code]
 
-    if s["server_group"]:                           
+    if s["server_group"]:
         kex_name, kex_loc = s["server_group"], f"{packet_ref}, {version} key_share"
         offered = [g for g in s["client_groups"] if g != s["server_group"]]
         pqc_offered = [g for g in offered if g in HYBRID_PQC_GROUPS]
@@ -129,7 +159,7 @@ def session_findings(s):
         if pqc_offered:
             note += f"; client also offered {', '.join(pqc_offered)} but server did not select it"
         elif s["server_group"] in HYBRID_PQC_GROUPS:
-            note += "; hybrid post-quantum key exchange"
+            note += "; post-quantum key exchange"
         out.append(Finding("network", asset, kex_loc, kex_name, notes=note))
     elif kex == "RSA":
         out.append(Finding("network", asset, where, "RSA",
@@ -138,11 +168,18 @@ def session_findings(s):
     elif kex == "ECDHE":
         out.append(Finding("network", asset, where, "ECDHE",
                            notes=f"{version}, ECDHE inferred from {suite}; curve is in ServerKeyExchange (not parsed)"))
+    elif kex == "DHE":
+        out.append(Finding("network", asset, where, "DHE",
+                           notes=f"{version}, DHE inferred from {suite}; group size is in ServerKeyExchange (not parsed)"))
 
-    
+    # TLS 1.2: the suite name also says which key signs the handshake (the "signature scheme" of the brief)
+    auth = re.match(r"TLS_(?:EC)?DHE_(RSA|ECDSA)_WITH", suite)
+    if auth:
+        out.append(Finding("network", asset, where, auth.group(1),
+                           notes=f"{version}, server authentication (signature) inferred from {suite}"))
+
     out.append(Finding("network", asset, where, family, bits, notes=f"{version}, {suite}"))
 
-    
     if mac == "SHA-1":
         out.append(Finding("network", asset, where, "SHA-1",
                            notes=f"HMAC-SHA1 record MAC in {suite}; HMAC is far less exposed than SHA-1 signatures "
