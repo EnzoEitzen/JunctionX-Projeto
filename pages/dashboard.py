@@ -652,18 +652,40 @@ with g_col1:
     st.altair_chart(chart_risk, use_container_width=True)
 
 with g_col2:
-    st.markdown('<div class="section-eyebrow">Telemetry · Ingestion Vector Breakdown</div>', unsafe_allow_html=True)
-    df_source = df_findings["source"].value_counts().reset_index()
-    df_source.columns = ["Vector", "Count"]
-    df_source["Vector"] = df_source["Vector"].str.capitalize()
+    st.markdown('<div class="section-eyebrow">Quantum Risk Score · By Scan</div>', unsafe_allow_html=True)
+    # Use the same finding-weighted formula as the dashboard's overall score:
+    # Critical = 100, Medium = 40, all other tiers = 0.
+    scan_sources = df_findings["source"].astype(str).str.strip().str.lower().replace({"cloud": "config"})
+    scan_scores = []
+    for scan in ["code", "network", "config"]:
+        scan_findings = df_findings.loc[scan_sources == scan]
+        count = len(scan_findings)
+        critical = int((scan_findings["risk_tier"] == "Critical").sum())
+        medium = int((scan_findings["risk_tier"] == "Medium").sum())
+        score = int(((critical * 1.0 + medium * 0.4) / count) * 100) if count else 0
+        scan_scores.append({
+            "Scan": scan.capitalize(),
+            "Risk Score": score,
+            "Findings": count,
+            "Score Label": f"{score}/100" if count else "N/A",
+        })
+    df_source = pd.DataFrame(scan_scores)
 
+    source_base = alt.Chart(df_source).encode(
+        x=alt.X("Risk Score:Q", title="Risk Score (/100)", scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=True, gridColor="#1c1c1f")),
+        y=alt.Y("Scan:N", sort=["Code", "Network", "Config"], title=""),
+        tooltip=["Scan:N", alt.Tooltip("Score Label:N", title="Risk Score"), "Findings:Q"],
+    )
+    source_bars = source_base.mark_bar(cornerRadius=6, height=28).encode(
+        color=alt.Color("Scan:N", scale=alt.Scale(domain=["Code", "Network", "Config"], range=["#bf5af2", "#2997ff", "#ff9f0a"]), legend=None),
+    )
+    source_labels = source_base.mark_text(align="left", dx=6, color="#f5f5f7").encode(
+        text="Score Label:N",
+    )
     chart_source = (
-        alt.Chart(df_source).mark_bar(cornerRadius=6, height=28).encode(
-            x=alt.X("Count:Q", title="Component Count", axis=alt.Axis(grid=True, gridColor="#1c1c1f")),
-            y=alt.Y("Vector:N", title=""),
-            color=alt.Color("Vector:N", scale=alt.Scale(domain=["Network", "Code", "Cloud"], range=["#2997ff", "#bf5af2", "#ff9f0a"]), legend=None),
-            tooltip=["Vector", "Count"]
-        ).properties(height=180, background="transparent").configure_view(strokeOpacity=0)
+        (source_bars + source_labels)
+        .properties(height=180, background="transparent", padding={"left": 5, "top": 5, "right": 65, "bottom": 5})
+        .configure_view(strokeOpacity=0)
     )
     st.altair_chart(chart_source, use_container_width=True)
 
