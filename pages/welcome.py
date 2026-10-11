@@ -1,7 +1,7 @@
 """
 QuantumTrace — Welcome page.
-Upload a folder with the same structure as the repository `data/` folder,
-hand it to your analysis program (integration.py) and open the report.
+Upload a folder, ZIP or files (JSON files with any name), organise them in the
+data/ layout, hand them to the analysis program (integration.py) and open the report.
 """
 import io
 import json
@@ -15,32 +15,88 @@ import streamlit as st
 
 from integration import run_analysis
 
-# Same structure and file names as the repository data/ folder
-REQUIRED_FILES = [
-    "cloud-posture/kms_key_inventory.json",
-    "cloud-posture/acm_certificates.json",
-    "cloud-posture/load_balancer_listeners.json",
-    "network-capture/network.pcap",
-]
-KNOWN_ROOTS = ("cloud-posture", "network-capture", "sample-repos")
+# Accepted inputs. JSON files can have ANY name: each one is recognised by its content and saved
+# under the file name the config scanner expects, so the analysis pipeline does not change.
+CLOUD_TYPES = {
+    # key in the JSON -> (file name expected by config_scanner.py, label)
+    "Keys": ("kms_key_inventory.json", "KMS keys"),
+    "Certificates": ("acm_certificates.json", "ACM certificates"),
+    "LoadBalancers": ("load_balancer_listeners.json", "Load balancers"),
+}
+CODE_EXT = (".py", ".java", ".go")
+CODE_EXTRA = ("go.mod", "requirements.txt")
 UPLOAD_ROOT = Path(tempfile.gettempdir()) / "quantumtrace_uploads"   # temporary; deleted after each audit
 
 
-def normalize_relpath(name: str):
-    """'data/cloud-posture/x.json' -> 'cloud-posture/x.json' (None if outside the known folders)."""
-    parts = [p for p in re.split(r"[\\/]+", name) if p and p != "."]
-    for i, p in enumerate(parts):
-        if p in KNOWN_ROOTS:
-            return "/".join(parts[i:])
-    return None
+def _parts(name: str):
+    return [p for p in re.split(r"[\\/]+", name) if p and p not in (".", "..")]
 
 
-def validate_structure(rel_paths):
-    missing = [f for f in REQUIRED_FILES if f not in rel_paths]
-    code_files = [p for p in rel_paths if p.startswith("sample-repos/") and p.endswith((".py", ".java", ".go"))]
-    if not code_files:
-        missing.append("sample-repos/ (Python, Java or Go files)")
-    return {"ok": not missing, "missing": missing, "code_files": len(code_files)}
+def _code_relpath(parts):
+    """Keep the path below sample-repos/ (or below the top uploaded folder)."""
+    if "sample-repos" in parts:
+        return "/".join(parts[parts.index("sample-repos") + 1:])
+    return "/".join(parts[1:] if len(parts) > 1 else parts)
+
+
+def _json_kind(content: bytes):
+    """Return ('cloud', key, data) | ('results', None, text) | (None, reason, None)."""
+    try:
+        data = json.loads(content.decode("utf-8-sig"))
+    except Exception:
+        return None, "not valid JSON", None
+    if isinstance(data, dict):
+        for key in CLOUD_TYPES:
+            if isinstance(data.get(key), list):
+                return "cloud", key, data
+        if isinstance(data.get("findings"), list):
+            return "results", None, json.dumps(data["findings"])
+    if isinstance(data, list) and data and all(isinstance(x, dict) for x in data) \
+            and any("algorithm" in x for x in data):
+        return "results", None, json.dumps(data)
+    return None, "format not recognised", None
+
+
+def organize(raw: dict):
+    """Sort uploaded files into the data/ layout. Returns a plan dict."""
+    plan = {"files": {}, "cloud": {}, "pcaps": [], "code": 0, "results": [], "ignored": []}
+    for name, content in raw.items():
+        parts = _parts(name)
+        if not parts:
+            continue
+        base = parts[-1]
+        low = base.lower()
+        if low.endswith(".json"):
+            kind, key, data = _json_kind(content)
+            if kind == "cloud":
+                fname = CLOUD_TYPES[key][0]
+                if fname in plan["cloud"]:          # several files of the same type -> merge their lists
+                    plan["cloud"][fname][key].extend(data[key])
+                else:
+                    plan["cloud"][fname] = data
+                plan.setdefault("sources", {}).setdefault(fname, []).append(base)
+            elif kind == "results":
+                plan["results"].append((base, data))
+            else:
+                plan["ignored"].append(f"{base} ({key})")
+        elif low.endswith((".pcap", ".pcapng")):
+            plan["files"][f"network-capture/{base}"] = content
+            plan["pcaps"].append(base)
+        elif low.endswith(CODE_EXT) or base in CODE_EXTRA:
+            rel = _code_relpath(parts)
+            if rel:
+                plan["files"][f"sample-repos/{rel}"] = content
+                plan["code"] += low.endswith(CODE_EXT)
+    for fname, data in plan["cloud"].items():
+        plan["files"][f"cloud-posture/{fname}"] = json.dumps(data).encode("utf-8")
+    missing = []
+    if not (plan["cloud"] or plan["pcaps"] or plan["code"]):
+        missing.append("at least one supported file: a cloud .json (KMS keys, ACM certificates "
+                       "or load balancers), a network capture (.pcap / .pcapng) or source code "
+                       "(.py, .java or .go)")
+    plan["missing"] = missing
+    plan["ok"] = not missing
+    return plan
 
 st.markdown(
     """
@@ -108,8 +164,8 @@ st.markdown(
 st.markdown(
     """
     <div class="w-nav">
-        <div class="w-brand">QuantumTrace <span class="w-badge">PQC Readiness</span></div>
-        <div class="w-badge">CycloneDX 1.6 · NIST FIPS 203/204/205</div>
+        <a class="w-brand" href="/" target="_self" style="text-decoration:none">QuantumTrace <span class="w-badge">PQC Readiness</span></a>
+        <a class="w-badge" href="/" target="_self" style="text-decoration:none">← Back to report</a>
     </div>
     <div class="w-hero">
         <div class="w-orb"></div>
@@ -130,15 +186,15 @@ st.markdown(
     """
     <div class="w-step">
         <div class="w-step-num">Step 01</div>
-        <div class="w-step-title">Upload your data folder.</div>
-        <div class="w-step-desc">Use the same structure and file names as the <code>data/</code> folder of the repository.
-        Select the folder itself, or upload it as a single ZIP file.</div>
+        <div class="w-step-title">Upload your data.</div>
+        <div class="w-step-desc">Select a folder, a ZIP, or individual files. JSON files can have any name —
+        each one is recognised by its content. A results <code>.json</code> from a previous analysis opens the report directly.</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-tab_folder, tab_zip = st.tabs(["Folder", "ZIP file"])
+tab_folder, tab_zip, tab_files = st.tabs(["Folder", "ZIP file", "Files"])
 with tab_folder:
     folder_files = st.file_uploader(
         "Select the data folder", accept_multiple_files="directory", key="upload_folder",
@@ -146,58 +202,74 @@ with tab_folder:
     )
 with tab_zip:
     zip_file = st.file_uploader("Upload data.zip", type=["zip"], key="upload_zip", label_visibility="collapsed")
+with tab_files:
+    loose_files = st.file_uploader(
+        "Upload files", accept_multiple_files=True, key="upload_files", label_visibility="collapsed",
+        type=["json", "pcap", "pcapng", "py", "java", "go", "mod", "txt"],
+    )
 
 
 def collect_uploads() -> dict[str, bytes]:
-    """Return {normalized relative path: content} from whichever uploader was used."""
+    """Return {uploaded path: content} from every uploader."""
     files: dict[str, bytes] = {}
     if zip_file is not None:
         try:
             with zipfile.ZipFile(io.BytesIO(zip_file.getvalue())) as zf:
                 for info in zf.infolist():
-                    if info.is_dir():
-                        continue
-                    rel = normalize_relpath(info.filename)
-                    if rel and ".." not in rel.split("/"):
-                        files[rel] = zf.read(info)
+                    if not info.is_dir() and "__MACOSX" not in info.filename:
+                        files[info.filename] = zf.read(info)
         except zipfile.BadZipFile:
             st.markdown('<div class="w-note err">This ZIP file could not be opened. Please check the file and try again.</div>', unsafe_allow_html=True)
-    for uf in folder_files or []:
-        rel = normalize_relpath(uf.name)
-        if rel and ".." not in rel.split("/"):
-            files[rel] = uf.getvalue()
+    for uf in (folder_files or []) + (loose_files or []):
+        files[uf.name] = uf.getvalue()
     return files
 
 
-uploads = collect_uploads()
-check = validate_structure(set(uploads))
+raw_uploads = collect_uploads()
+plan = organize(raw_uploads)
+uploads = plan["files"]
 
 
 def tree_html() -> str:
-    def row(path, ok, label=None):
-        cls, mark = ("ok", "✓") if ok else ("miss", "✕") if uploads else ("dim", "○")
-        return f'<span class="{cls}">{mark}</span>&nbsp; {label or path}<br>'
+    def mark(ok):
+        return ('<span class="ok">✓</span>' if ok else '<span class="miss">✕</span>') if raw_uploads else '<span class="dim">○</span>'
 
     html = '<div class="w-tree"><span class="dim">data/</span><br>'
-    html += '<span class="dim">├─ cloud-posture/</span><br>'
-    for f in REQUIRED_FILES[:3]:
-        html += "│&nbsp;&nbsp;&nbsp;" + row(f, f in uploads, f.split("/")[1])
+    html += '<span class="dim">├─ cloud-posture/</span> <span class="dim">· any .json name</span><br>'
+    for key, (fname, label) in CLOUD_TYPES.items():
+        src = plan.get("sources", {}).get(fname, [])
+        detail = f" <span class='dim'>← {', '.join(src)}</span>" if src else " <span class='dim'>(optional)</span>"
+        m = mark(True) if src else ('<span class="dim">○</span>' if plan["cloud"] else mark(False))
+        html += f"│&nbsp;&nbsp;&nbsp;{m}&nbsp; {label}{detail}<br>"
     html += '<span class="dim">├─ network-capture/</span><br>'
-    html += "│&nbsp;&nbsp;&nbsp;" + row(REQUIRED_FILES[3], REQUIRED_FILES[3] in uploads, "network.pcap")
+    pc = ", ".join(plan["pcaps"]) if plan["pcaps"] else ".pcap / .pcapng"
+    html += f"│&nbsp;&nbsp;&nbsp;{mark(bool(plan['pcaps']))}&nbsp; {pc}<br>"
     html += '<span class="dim">└─ sample-repos/</span><br>'
-    html += "&nbsp;&nbsp;&nbsp;&nbsp;" + row("sample-repos", check["code_files"] > 0,
-                                              f"python · java · go &nbsp;<span class='dim'>({check['code_files']} source files)</span>")
+    html += f"&nbsp;&nbsp;&nbsp;&nbsp;{mark(plan['code'] > 0)}&nbsp; python · java · go &nbsp;<span class='dim'>({plan['code']} source files)</span>"
     return html + "</div>"
 
 
 st.markdown(tree_html(), unsafe_allow_html=True)
 
-if uploads and not check["ok"]:
-    st.markdown(
-        '<div class="w-note err">Some required files are missing: <strong>'
-        + ", ".join(check["missing"]) + "</strong>. Keep the same folder and file names as the repository.</div>",
-        unsafe_allow_html=True,
-    )
+if plan["ignored"]:
+    st.markdown('<div class="w-note">Ignored JSON files: <strong>' + ", ".join(plan["ignored"]) + "</strong>.</div>",
+                unsafe_allow_html=True)
+
+# A results .json (output of the analysis program) can be opened directly
+if plan["results"]:
+    names = ", ".join(n for n, _ in plan["results"])
+    st.markdown(f'<div class="w-note">Analysis results found: <strong>{names}</strong>. Open them without running a new audit.</div>',
+                unsafe_allow_html=True)
+    if st.button("Open results in the report", type="primary", key="open_results"):
+        merged = []
+        for _, text in plan["results"]:
+            merged.extend(json.loads(text))
+        st.session_state["results_json"] = json.dumps(merged)
+        st.session_state["results_label"] = names
+        st.switch_page("pages/dashboard.py")
+elif raw_uploads and not plan["ok"]:
+    st.markdown('<div class="w-note err">Still missing: <strong>' + "; ".join(plan["missing"]) + "</strong>.</div>",
+                unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Step 2 — run the audit through integration.run_analysis()
@@ -215,13 +287,17 @@ st.markdown(
 )
 
 report_name = st.text_input("Report name", value="Environment audit", max_chars=80)
-run = st.button("Run audit and open report", type="primary", disabled=not check["ok"])
+run = st.button("Run audit and open report", type="primary", disabled=not plan["ok"])
 
 if run:
     with st.status("Running QuantumTrace…", expanded=True) as status:
         # 1. Save the uploaded folder to disk with the original structure: uploads/<timestamp>/data/...
         data_dir = UPLOAD_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S") / "data"
         st.write(f"Saving {len(uploads)} files")
+        # Always create every expected subfolder (empty if nothing was uploaded for it),
+        # so the analysis program never fails with "Input folder not found".
+        for sub in ("cloud-posture", "network-capture", "sample-repos"):
+            (data_dir / sub).mkdir(parents=True, exist_ok=True)
         for rel, content in uploads.items():
             dest = data_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
