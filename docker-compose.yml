@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # App code should read MONGO_URI; falls back to localhost for non-Docker runs
+      MONGO_URI: mongodb://mongo:27017
+      # Extra flags passed to classifier.py (leave empty if none)
+      CLASSIFIER_FLAGS: ""
+    volumes:
+      # Sample data available inside the container, read-only
+      - ./data:/app/data:ro
+      # Persist pipeline output (output/*.json) on the host
+      - ./output:/app/output
+      # Lets the app's docker Python SDK talk to the host Docker daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
