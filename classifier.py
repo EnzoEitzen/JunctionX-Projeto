@@ -14,6 +14,15 @@ Usage:
 Both arguments are optional (defaults: output/ and output/results.json).
 results.json is rebuilt from scratch on every run, so it never goes stale.
 
+MongoDB (optional)
+    If the MONGODB_URI environment variable is set (or it is in a .env file), every finding is also
+    upserted into MongoDB after results.json has been written. Running again updates the existing
+    documents instead of duplicating them. See mongo_sync.py for the details.
+        python classifier.py output/ output/results.json              # syncs when MONGODB_URI is set
+        python classifier.py output/ output/results.json --no-mongo   # never syncs
+        python classifier.py output/ output/results.json --prune      # also remove findings that are gone
+        python classifier.py output/ output/results.json --replace    # database holds ONLY this run's findings
+
 Other modules can import it:
     from classifier import classify_findings, summarize
 
@@ -408,6 +417,13 @@ def main():
     parser.add_argument("results", nargs="?", default=os.path.join("output", RESULTS_NAME),
                         help="results file to write (default: output/results.json)")
     parser.add_argument("--json", action="store_true", help="print the summary as JSON instead of a table")
+    parser.add_argument("--no-mongo", action="store_true", help="do not sync to MongoDB even if MONGODB_URI is set")
+    parser.add_argument("--mongo-db", help="MongoDB database (default: MONGODB_DB, or quantumtrace)")
+    parser.add_argument("--mongo-collection", help="MongoDB collection (default: MONGODB_COLLECTION, or findings)")
+    parser.add_argument("--replace", action="store_true",
+                        help="make the MongoDB collection hold only the findings of this run (deletes all other findings in it)")
+    parser.add_argument("--prune", action="store_true",
+                        help="also delete findings from MongoDB that are no longer reported (only for the sources in this run)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.folder):
@@ -427,6 +443,14 @@ def main():
     else:
         print_summary(summary, unknown)
         print(f"\nClassified findings saved to {args.results}")
+
+    if not args.no_mongo:
+        from mongoSync import push_findings
+        # with --json, stdout must stay pure JSON, so the MongoDB messages go to stderr
+        log = (lambda message: print(message, file=sys.stderr)) if args.json else print
+        ok = push_findings(findings, db=args.mongo_db, collection=args.mongo_collection, prune=args.prune, replace=args.replace, log=log)
+        if ok is False:
+            sys.exit(1)      # results.json is already written; only the MongoDB step failed
 
 
 if __name__ == "__main__":
