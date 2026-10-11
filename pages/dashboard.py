@@ -56,30 +56,31 @@ st.markdown(
     header[data-testid="stHeader"], footer { display: none !important; }
 
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 6rem !important;
         padding-bottom: 5rem !important;
         max-width: 1200px !important;
     }
 
     .section-anchor {
-        scroll-margin-top: 16px !important;
-        scroll-snap-margin-top: 16px !important;
+        scroll-margin-top: 80px !important;
+        scroll-snap-margin-top: 80px !important;
         display: block !important;
         position: relative !important;
         visibility: hidden !important;
         height: 0px !important;
     }
 
-    /* Navigation bar (scrolls with the page) */
+    /* Fixed navigation stays visible outside Streamlit's scrolling content. */
     .apple-nav {
-        position: relative; z-index: 99999;
+        position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 99999;
+        width: min(1200px, 100%); box-sizing: border-box;
         display: flex; align-items: center; justify-content: space-between;
         padding: 10px 28px;
         background: rgba(10, 10, 12, 0.78);
         backdrop-filter: saturate(180%) blur(24px);
         -webkit-backdrop-filter: saturate(180%) blur(24px);
         border-bottom: 1px solid var(--border-hairline);
-        margin-left: -2rem; margin-right: -2rem; margin-top: -1.5rem; margin-bottom: 2.5rem;
+        margin: 0;
     }
     .nav-brand {
         display: flex; align-items: center; gap: 10px;
@@ -197,7 +198,7 @@ st.markdown(
     html, body, .stApp { overflow-x: hidden !important; }
     @media (max-width: 900px) {
         .nav-links .nav-link { display: none; }
-        .apple-nav { padding: 10px 16px; margin-left: -1rem; margin-right: -1rem; }
+        .apple-nav { padding: 10px 16px; }
         .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 12px !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"], [data-testid="stHorizontalBlock"] > div[data-testid="column"] {
@@ -472,7 +473,7 @@ components.html(
                         link.classList.add('active');
                     }
 
-                    // Scroll suave com compensação da barra fixa (80px)
+                    // Keep the selected section below the fixed navigation.
                     var container = getScrollContainer(targetEl);
                     var isWindow = (container === doc.documentElement || container === doc.body || container === doc.scrollingElement);
                     var containerTop = isWindow ? 0 : container.getBoundingClientRect().top;
@@ -481,7 +482,8 @@ components.html(
                         ? (window.pageYOffset || doc.documentElement.scrollTop || doc.body.scrollTop || 0)
                         : container.scrollTop;
 
-                    var targetY = currentScroll + (targetTop - containerTop) - 80;
+                    var navOffset = Math.max(0, nav.getBoundingClientRect().bottom - containerTop) + 16;
+                    var targetY = currentScroll + (targetTop - containerTop) - navOffset;
                     container.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
                 });
             });

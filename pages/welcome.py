@@ -114,15 +114,11 @@ st.markdown(
     html, body, .stApp { overflow-x: hidden !important; }
 
     @keyframes qtFadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
-    @keyframes qtGlow { 0%,100% { opacity: .55; transform: scale(1); } 50% { opacity: .9; transform: scale(1.06); } }
 
     .w-nav { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid var(--border-hairline); margin-bottom: 9vh; }
     .w-brand { font-size:14px; font-weight:600; color:#fff; display:flex; gap:10px; align-items:center; }
     .w-badge { font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); border:1px solid var(--border-hairline); padding:2px 8px; border-radius:999px; }
     .w-hero { text-align:center; animation: qtFadeUp .9s cubic-bezier(.16,1,.3,1) both; }
-    .w-orb { width:120px; height:120px; margin:0 auto 34px; border-radius:50%;
-        background: radial-gradient(circle at 35% 30%, #ffffff 0%, #9fd0ff 18%, #2997ff 45%, #0a2a4d 75%, transparent 76%);
-        box-shadow: 0 0 80px rgba(41,151,255,.35); animation: qtGlow 5s ease-in-out infinite; }
     .w-eyebrow { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:14px; }
     .w-title { font-size: clamp(2.4rem, 7vw, 4.6rem); font-weight:700; letter-spacing:-.045em; line-height:1.04; color:#fff; margin-bottom:18px; }
     .w-sub { font-size: clamp(1rem, 2.2vw, 1.25rem); color:var(--text-muted); line-height:1.5; max-width:640px; margin:0 auto 10vh; }
@@ -168,7 +164,6 @@ st.markdown(
         <a class="w-badge" href="/" target="_self" style="text-decoration:none">← Back to report</a>
     </div>
     <div class="w-hero">
-        <div class="w-orb"></div>
         <div class="w-eyebrow">Welcome to QuantumTrace</div>
         <div class="w-title">See your cryptography.<br>Before quantum does.</div>
         <div class="w-sub">Drop in your environment export — network capture, code repositories and cloud configuration —
