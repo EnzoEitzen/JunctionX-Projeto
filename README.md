@@ -1,310 +1,197 @@
 # QuantumTrace
 
-> Uncovering cryptographic debt in the quantum dawn. A lightweight, non-intrusive tool that detects, classifies and visualizes quantum-vulnerable cryptography across **network traffic**, **application code** and **cloud configurations**, and exports a **Cryptography Bill of Materials (CBOM)**.
+> Uncovering cryptographic debt in the quantum dawn.
 
-Built in 24 hours for the **QuantumTrace** challenge at **JunctionX Lisbon 2026**.
+Built for the **QuantumTrace challenge at JunctionX Lisbon 2026**, QuantumTrace identifies quantum-vulnerable cryptography across captured network traffic, application source code, and exported cloud configurations. It combines the findings in a Streamlit report and recommends quantum-resilient alternatives.
 
-<!-- TODO: replace/confirm the project name; add a banner, screenshot or demo GIF here -->
+## What the final project includes
 
----
+- **Network scan:** offline TLS handshake analysis with PyShark/TShark, including classical key exchanges and recognized hybrid post-quantum groups.
+- **Code scan:** rule-based detection of cryptographic algorithms, key lengths, and library usage in Python, Java, and Go source files.
+- **Config scan:** AWS KMS key inventories, ACM certificates, and load balancer listener JSON exports. Listeners are linked to certificates where possible.
+- **Risk classification:** Critical, Medium, Safe, and explicit reporting of unrecognized algorithms, with replacement recommendations referencing NIST FIPS 203/204/205.
+- **Interactive report:** overall risk score, separate Code/Network/Config risk scores, risk distribution, searchable/filterable findings, and report downloads.
+- **New audit:** upload supported files through the application and run the relevant scanners. The first report uses the bundled sample data.
+- **CBOM export:** a CycloneDX 1.6 exporter with an optional schema-validation flag.
+- **Optional MongoDB synchronization:** upsert classified findings when the correct database environment variables are configured. The dashboard itself uses JSON results, not MongoDB queries.
 
-## The problem
+There is no live endpoint probing or live cloud-account integration in this version.
 
-Quantum computers running Shor's algorithm will break the public-key cryptography the internet relies on: **RSA, DSA, and elliptic-curve schemes (ECDSA, ECDH)**, plus Diffie-Hellman. Grover's algorithm also weakens some symmetric ciphers and hashes. Adversaries are already running **"Harvest Now, Decrypt Later"** attacks, archiving encrypted traffic today to decrypt it once quantum systems mature.
+## Run with Docker
 
-NIST has finalized post-quantum standards (**FIPS 203, 204, 205**), but most organizations don't know where legacy cryptography is used across their environments. You can't migrate what you can't see.
+### Requirements
 
-## What QuantumTrace does
+Install Docker Desktop (Windows/macOS) or Docker Engine with the Compose plugin (Linux), and start Docker. On Docker Desktop, use Linux containers. Python and TShark are installed inside the image; they do not need to be installed on the host.
 
-QuantumTrace audits several kinds of input, identifies the cryptographic primitives in use, and classifies each one by quantum risk.
-
-### Input sources
-
-| Source | File(s) | What we extract |
-|---|---|---|
-| **Network capture** | `network.pcap` | TLS handshakes (ClientHello / ServerHello): TLS version, negotiated cipher suite, key exchange group, and whether the exchange is classical (x25519, RSA key exchange) or hybrid post-quantum (X25519MLKEM768) |
-| **AWS KMS keys** | `kms_key_inventory.json` | Key spec (RSA, ECC or symmetric), key usage, signing/encryption algorithms, key origin and state |
-| **AWS ACM certificates** | `acm_certificates.json` | Certificate key algorithm and signature algorithm, certificate type and validity |
-| **AWS load balancers** | `load_balancer_listeners.json` | Listener protocol, port and TLS security policy, linked to the certificate each listener uses |
-| **Code repositories** (Python, Java, Go) | `data/code/` | Declared algorithms, key lengths and cryptographic libraries |
-| **Live endpoints** (optional) | `hosts.txt` | TLS profile of public sandbox targets, probed in real time |
-
-<!-- TODO: remove any row you don't actually support by demo time -->
-
-### Quantum risk classification
-
-| Tier | Meaning | Examples |
-|---|---|---|
-| **Critical** | Asymmetric schemes broken by Shor's algorithm | RSA, DSA, ECDSA, ECDH (including x25519 and RSA key exchange), Diffie-Hellman |
-| **Medium** | Symmetric ciphers/hashes weakened by Grover's algorithm | AES-128, 3DES, SHA-1 |
-| **Safe / Quantum-resilient** | Large-key symmetric primitives and recognized PQC standards | AES-256, ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205) |
-
-Each finding is mapped to a recommended replacement and the relevant NIST standard.
-
-### Outputs
-
-- **Quantum Risk Score** for the whole environment
-- **Streamlit dashboard** with filterable findings and charts
-- **CBOM export** in JSON, based on the CycloneDX 1.6 cryptographic asset model
-
-## Sample data
-
-The organizers provided synthetic data. This is what the scanners work on.
-
-### `network.pcap`
-
-About 2,000 packets containing roughly **78 TLS sessions** in three clearly different groups:
-
-| Group | Hosts | Ports | What the handshake shows | Expected risk |
-|---|---|---|---|---|
-| **Legacy TLS 1.2** | `web*.lab`, `dc*.lab` | 443, 636 | RSA key exchange with `AES-CBC-SHA` cipher suites, no forward secrecy | Critical (RSA), plus Medium (AES-128, SHA-1) |
-| **Modern TLS 1.3, classical** | `app*.lab`, `mail*.lab` | 443, 993 | `x25519` key exchange, `AES-128-GCM` | Critical (x25519), plus Medium (AES-128) |
-| **Hybrid post-quantum TLS 1.3** | `vault*.lab` | 443 | `X25519MLKEM768` key exchange, `AES-256-GCM` | Safe (ML-KEM hybrid, AES-256) |
-
-The capture also contains DNS, SSH, plain HTTP, SMTP (587) and PostgreSQL (5432) traffic, which can be ignored or counted as unencrypted or out-of-scope.
-
-### `kms_key_inventory.json`
-
-10 KMS keys with fields such as `KeySpec`, `KeyUsage`, `SigningAlgorithms`, `EncryptionAlgorithms`, `Origin` and `KeyState`:
-
-- **RSA** keys (2048, 3072, 4096 bits): signing and decryption keys. The 3072-bit key is CloudHSM-backed.
-- **ECC** keys (NIST P-256 and P-384): device attestation and an internal CA root.
-- **Symmetric** keys (`SYMMETRIC_DEFAULT`): S3, EBS and session encryption. One is in `PendingDeletion` state.
-
-### `acm_certificates.json`
-
-5 ACM certificates, each with `KeyAlgorithm` and `SignatureAlgorithm`:
-
-- Three **RSA 2048** certificates, two of them with SHA-256 signatures
-- ECDSA P-256 and P-384 certificates
-- One imported **legacy** RSA certificate with a **SHA-1 signature**, which has already passed its end date
-
-### `load_balancer_listeners.json`
-
-6 load balancers with listeners that give a protocol, port and **TLS policy name** (for example `ELBSecurityPolicy-2016-08` or `ELBSecurityPolicy-TLS13-1-2-2021-06`). Each HTTPS/TLS listener points to an ACM certificate by ARN, and one listener forwards plain HTTP with no TLS at all.
-
-The load balancer file only contains **policy names**, not cipher lists. The config scanner uses a small lookup table (policy name to allowed TLS versions) and joins each listener to its certificate through the ARN.
-
-## How it works
-
-```
-  network.pcap ─────────►  Network analyzer (PyShark) ──┐
-  data/code/ ───────────►  Code scanner                ─┼──►  Normalized findings  ──►  Risk classifier
-  KMS / ACM / LB JSON ──►  Config scanner              ─┘                                   │
-                                                                                            ▼
-                                                                     Streamlit dashboard  |  CBOM (JSON)  |  Risk score
-```
-
-Every scanner produces the same finding format: asset, location, algorithm, key length, library, risk tier, and recommended replacement.
-
-## Tech stack
-
-<!-- TODO: edit to match what you actually use -->
-
-| Purpose | Library / tool |
-|---|---|
-| Packet capture parsing | [`pyshark`](https://github.com/KimiNewt/pyshark) (needs TShark/Wireshark installed) |
-| Certificate parsing | [`cryptography`](https://cryptography.io) |
-| Code and config scanning | `pathlib`, `re`, `json` (standard library) |
-| Data handling | [`pandas`](https://pandas.pydata.org) |
-| Dashboard | [`streamlit`](https://streamlit.io) |
-| Live endpoint probing (optional) | [`sslyze`](https://github.com/nabla-c0d3/sslyze) |
-| Packaging | Docker (the image includes TShark) |
-| CBOM format | CycloneDX 1.6 (crypto asset module), written as JSON |
-
-## Getting started
-
-### Prerequisites
-
-- Python 3.11+
-- [Wireshark/TShark](https://www.wireshark.org) installed and on your PATH (PyShark calls it). Check with `tshark --version`.
-
-### Install
+The following instructions use the `test` branch, which contains the reviewed final application and Docker setup.
 
 ```bash
-git clone https://github.com/<your-org>/<your-repo>.git
-cd <your-repo>
-
-python -m venv .venv
-source .venv/bin/activate      # on Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+git clone --branch test --single-branch https://github.com/EnzoEitzen/JunctionX-Projeto.git
+cd JunctionX-Projeto
 ```
 
-Or install the libraries directly:
+### Check the current Docker configuration
+
+Before building, check these existing configuration inconsistencies:
+
+1. In `entrypoint.sh`, change the classifier output from `output/result.json` to **`output/results.json`**:
+
+   ```sh
+   python classifier.py output output/results.json ${CLASSIFIER_FLAGS:-}
+   ```
+
+   The dashboard and upload pipeline use the plural filename. Remove or move any old `output/result.json` before rerunning, so it is not merged as another scanner input.
+
+2. MongoDB is optional. Compose currently sets `MONGO_URI`, but the application reads **`MONGODB_URI`**. To enable synchronization to the included MongoDB service, replace that environment entry in `docker-compose.yml` with:
+
+   ```yaml
+   MONGODB_URI: mongodb://mongo:27017
+   ```
+
+   Without `MONGODB_URI`, synchronization is skipped and JSON-based reports still work. `MONGODB_DB` and `MONGODB_COLLECTION` optionally override the defaults `quantumtrace` and `findings`.
+
+3. The current Compose file mounts `/var/run/docker.sock` into the app. The implemented scans do not need it. Remove that volume entry unless you intentionally require host Docker access: it grants extensive control over the host.
+
+These are configuration checks, not changes performed by this README update.
+
+### Start
 
 ```bash
-pip install pyshark cryptography pandas streamlit
+docker compose up --build
 ```
 
-### Add the data
+The first build downloads the images and installs dependencies. The app then runs the scans and classifier before opening Streamlit. Wait for startup to finish, then open **http://localhost:8501**.
 
+To run in the background:
+
+```bash
+docker compose up --build -d
+docker compose logs -f app
 ```
+
+### Startup pipeline
+
+With the filename correction above, `entrypoint.sh` runs:
+
+```sh
+python network_analyzer.py data/network-capture output/network_analyzer_output.json
+python config_scanner.py data/cloud-posture output/config_scanner_output.json
+python code_scanner.py data/sample-repos output/code_scanner_output.json
+python classifier.py output output/results.json ${CLASSIFIER_FLAGS:-}
+streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+```
+
+The pipeline stops on an error, so the dashboard will not start until every startup step succeeds. `CLASSIFIER_FLAGS` is configured in the Compose app environment; leave it empty normally. Supported examples are `--json` and `--no-mongo` (`--strict` is not a supported flag).
+
+### Inputs and persistence
+
+```text
 data/
-├── pcaps/network.pcap
-├── cloud/
-│   ├── kms_key_inventory.json
-│   ├── acm_certificates.json
-│   └── load_balancer_listeners.json
-└── code/              # sample Python, Java and Go repositories
+  network-capture/   # Packet captures
+  cloud-posture/     # KMS, ACM, and load balancer JSON exports
+  sample-repos/      # Python, Java, and Go source files
+output/              # Startup scanner outputs and consolidated results.json
 ```
 
-### Run the scanners
+Compose mounts `data/` read-only, persists startup output in the host's `output/` directory, and stores MongoDB data in the `mongo-data` named volume. New audits run separately in temporary directories and return their results to the report; their temporary files are cleaned up rather than retained in the host output folder. Download a report you want to keep.
 
-<!-- TODO: replace with your real file names and commands -->
+### Stop and restart
 
 ```bash
-# 1. Analyze the packet capture
-python network_analyzer.py data/pcaps/network.pcap
-
-# 2. Scan the AWS configuration dumps (KMS, ACM, load balancers)
-python config_scanner.py data/cloud/
-
-# 3. Scan sample code repositories
-python code_scanner.py data/code/
-
-# 4. (Optional) Probe live sandbox endpoints
-python live_probe.py hosts.txt
+docker compose down
+docker compose up -d
 ```
 
-Each command adds its findings to `output/results.json`.
-
-### Launch the dashboard
+Stopping does not delete the host output or MongoDB volume. `docker compose down -v` also deletes the MongoDB volume: use it only when you intend to erase that database data. Recreate the app container to rerun the startup pipeline after changing inputs:
 
 ```bash
-streamlit run dashboard.py
+docker compose up -d --force-recreate app
 ```
 
-The dashboard only reads `output/results.json`. PyShark is not run inside Streamlit.
+### Troubleshooting and sharing
 
-### Export the CBOM
+- **Dashboard unavailable:** inspect `docker compose ps` and `docker compose logs app`; scans must finish first.
+- **Port 8501 already occupied:** change the app mapping to `"8502:8501"`, recreate it, and open http://localhost:8502.
+- **Dependency installation fails:** use the exact error from the build log. If pip reports an encoding issue, save `requirements.txt` as UTF-8; if a pinned version is unavailable, review that pin before rebuilding.
+- **MongoDB startup error:** the existing `depends_on` starts MongoDB first but does not wait for database readiness. Check `docker compose logs mongo` and restart the app once MongoDB is ready, or disable sync with `--no-mongo`.
+- **Friends on the same network:** use `http://<your-computer-LAN-IP>:8501` and allow inbound access on the host firewall's trusted/private network. Streamlit's container Network/External URLs are not the host address.
+- **Friends over the internet:** use an access-controlled tunnel or deployment. Do not expose sensitive audit results or MongoDB directly to the public internet. A tunnel to a local instance stops working when the computer or Docker stops.
+
+## How risk is calculated
+
+| Tier | Weight | Typical examples |
+|---|---:|---|
+| Critical | 100 | RSA, DSA, ECDSA, ECDH, classical Diffie-Hellman |
+| Medium | 40 | AES-128, SHA-1, legacy symmetric primitives |
+| Safe | 0 | AES-256, recognized ML-KEM/hybrid groups and supported PQC primitives |
+
+The classifier averages these weights over unique `(source, asset, algorithm, key_length)` items, excluding unclassified items from that average. It prints both overall and per-source summaries.
+
+The dashboard currently calculates its scores over displayed findings instead of deduplicated classifier items:
+
+```text
+Dashboard score = floor((100 × Critical findings + 40 × Medium findings) / total findings)
+```
+
+The same formula is applied separately to Code, Network, and Config (the `cloud` source is displayed as Config). A scan without findings is shown as N/A. Because the denominators differ, dashboard and classifier scores can differ. These scores are project heuristics, not an official NIST certification or a probability of compromise.
+
+## Run without Docker
+
+Use Python 3.12, install TShark and put it on PATH, then install the repository dependencies in a virtual environment:
 
 ```bash
-python export_cbom.py output/results.json > output/cbom.json
+python -m venv .venv
+# Linux/macOS:
+source .venv/bin/activate
+# Windows PowerShell instead:
+# .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-### Docker
-
-<!-- TODO: only keep this section if you actually add a Dockerfile -->
+Run the four Python commands listed in the startup pipeline, then:
 
 ```bash
-docker build -t quantumtrace .
-docker run -p 8501:8501 quantumtrace
+streamlit run app.py
 ```
 
-Then open http://localhost:8501.
+Use `app.py`, not `pages/dashboard.py`, as the multipage application entry point.
 
-## Step-by-step guide
+## Export a CBOM
 
-A walkthrough from a fresh machine to a finished audit report.
+Export and optionally validate the consolidated results:
 
-<!-- TODO: update file names, folders and commands to match your repo -->
+```bash
+python export_cbom.py output/results.json -o output/cbom.json --validate
+```
 
-1. **Get the code**
-   ```bash
-   git clone https://github.com/<your-org>/<your-repo>.git
-   cd <your-repo>
-   ```
+Or from the running Docker app:
 
-2. **Create a virtual environment and install dependencies**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate      # on Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-   Also install Wireshark/TShark and make sure `tshark` is on your PATH.
+```bash
+docker compose exec app python export_cbom.py output/results.json -o output/cbom.json --validate
+```
 
-3. **Add the input data**
-   - `data/pcaps/network.pcap`
-   - `data/cloud/kms_key_inventory.json`, `acm_certificates.json`, `load_balancer_listeners.json`
-   - `data/code/`: the sample Python, Java and Go repositories
+The mounted output folder makes `output/cbom.json` available on the host. Validation failures are reported explicitly; schema validity should be checked, not assumed. Keep generated CBOM files separate from scanner inputs when rerunning the classifier.
 
-4. **Analyze the network capture**
-   ```bash
-   python network_analyzer.py data/pcaps/network.pcap
-   ```
-   This extracts the TLS version, cipher suite and key exchange group for each session and writes the findings to `output/results.json`.
+## Implementation and limitations
 
-5. **Scan the cloud configuration and the code**
-   ```bash
-   python config_scanner.py data/cloud/
-   python code_scanner.py data/code/
-   ```
-   Each command adds its findings to the same `results.json`.
+The implementation uses Python, PyShark/TShark, Streamlit, pandas, Altair, the CycloneDX Python library, and optional PyMongo. Docker Compose packages the app and MongoDB.
 
-6. **(Optional) Probe live sandbox endpoints**
-   ```bash
-   python live_probe.py hosts.txt
-   ```
+- Network analysis depends on captured TLS handshake fields and TShark's protocol recognition; it does not decrypt application traffic or promise coverage of every protocol.
+- Code scanning is rule-based, not full semantic/static analysis; dynamic algorithm selection can be missed and false positives are possible.
+- Cloud analysis reads JSON exports, not live AWS accounts. Load balancer policies use a local lookup rather than live cipher enumeration; KMS symmetric defaults require assumptions.
+- Binary artifact scanning and automated cryptographic remediation are not implemented.
+- Recommendations and sample-data results are an inventory/migration starting point, not a security certification.
 
-7. **Classify the risk**
-   The classifier assigns every finding to Critical, Medium or Safe, maps it to the relevant NIST standard, and computes the overall Quantum Risk Score. If this isn't already part of the scanners' output, run:
-   ```bash
-   python classifier.py output/results.json
-   ```
-
-8. **Explore the results**
-   ```bash
-   streamlit run dashboard.py
-   ```
-   Filter by source or risk tier, and check the Quantum Risk Score at the top.
-
-9. **Export the CBOM**
-   ```bash
-   python export_cbom.py output/results.json > output/cbom.json
-   ```
-   The result is a structured JSON audit report based on the CycloneDX 1.6 cryptographic asset model.
-
-10. **Act on the findings**
-    Use the recommended replacements in the report (for example ML-KEM, ML-DSA or SLH-DSA) to plan your migration, starting with the Critical findings that protect long-lived data.
-
-## Demo
-
-We run QuantumTrace on the organizer-provided data and show how findings from the network capture, the AWS configuration dumps and the code repositories land in a single risk-ranked view. The legacy TLS 1.2 hosts, the classical TLS 1.3 hosts and the hybrid post-quantum `vault` hosts make a clear before-and-after story.
-
-<!-- TODO: add screenshots or a link to the demo video -->
-
-## Limitations
-
-This was built in 24 hours, so:
-
-- Detection is rule-based and covers a limited set of algorithms and libraries, so some false positives or misses are possible.
-- The sample TLS 1.2 sessions don't appear to include certificate messages, so their key type is inferred from the cipher suite (RSA key exchange) rather than read from a certificate.
-- Load balancer TLS policies are mapped from policy name using a hand-written lookup table, not from live cipher lists.
-- KMS `SYMMETRIC_DEFAULT` keys are treated as AES-256, which is the AWS default, because the file doesn't state the key size.
-- Code scanning uses pattern matching rather than full static analysis.
-- Cloud scanning reads provided configuration dumps, not live cloud accounts.
-- SSH, SMTP and database traffic in the capture is not analyzed.
-- Binary artifact analysis is not supported.
-- The CBOM follows the CycloneDX 1.6 cryptographic asset model in a simplified form and may not pass full schema validation.
-
-## Roadmap
-
-- [ ] Full CycloneDX 1.6 schema validation
-- [ ] Deeper static analysis (e.g. Semgrep) for code scanning
-- [ ] SSH, SMTP/STARTTLS and database TLS analysis
-- [ ] Binary artifact scanning
-- [ ] Live AWS, Azure and GCP integration
-- [ ] CI integration to flag new quantum-vulnerable code
-- [ ] Automated remediation suggestions
+The bundled organizer data demonstrates legacy TLS 1.2, classical TLS 1.3, hybrid post-quantum TLS, AWS configuration inventories, and sample source repositories. See [READMEfindings.md](READMEfindings.md) for the shared finding format.
 
 ## Team
 
-<!-- TODO: fill in names and GitHub handles -->
-
-| Name | Role | Responsibilities | Main files | GitHub |
-|---|---|---|---|---|
-| Ihor | **Network analyst** | Parse `network.pcap` with PyShark and extract TLS version, cipher suite and key exchange group for every session; tell classical from hybrid post-quantum exchanges | `network_analyzer.py` | |
-| Bicho, Enzo | **Code & config scanner** | Scan the Python, Java and Go repos for crypto algorithms, key lengths and libraries; parse the KMS, ACM and load balancer JSON dumps and link listeners to certificates | `code_scanner.py`, `config_scanner.py` | |
-| Todos | **Risk engine & CBOM** | Own the shared finding format, the Critical/Medium/Safe classification table, the Quantum Risk Score, the FIPS 203/204/205 mapping, and the CycloneDX-style CBOM export | `finding.py`, `classifier.py`, `export_cbom.py` | |
-| Miguel, Daniil | **Dashboard & UX** | Build the Streamlit dashboard (risk score, charts, filters, findings table) | `dashboard.py` | |
-| Todos | **Integration, demo & pitch** | Repo and Git setup, `requirements.txt` and Dockerfile (with TShark), demo script, optional live endpoint probing, README, final pitch and demo video | `live_probe.py`, `Dockerfile`, `demo/` | |
-
-**Working agreements**
-
-- In the first two hours, agree on the shared finding format (asset, location, algorithm, key length, library, risk tier, replacement) and write it down in `finding.py`. Everyone's output depends on it.
-- Each person works mainly in their own files to avoid merge conflicts, and commits small and often.
-- Use short branches and merge into `main` at least every few hours so integration problems show up early.
-- Stop adding features in the last two hours and use that time to test the demo end to end and rehearse the pitch.
+| Contributors | Focus |
+|---|---|
+| Ihor | Network analysis |
+| Bicho, Enzo | Code and config scanning |
+| Miguel, Daniil | Dashboard and UX |
+| Whole team | Risk engine, CBOM, integration, and demo |
 
 ## Acknowledgements
 
